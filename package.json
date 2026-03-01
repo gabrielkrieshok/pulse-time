@@ -1,0 +1,25 @@
+{
+  "name": "pulse-time",
+  "author": "Gabriel",
+  "version": "1.0.0",
+  "pebble": {
+    "displayName": "Pulse Time",
+    "uuid": "b2c3d4e5-f6a7-8901-bcde-f12345678901",
+    "sdkVersion": "3",
+    "enableMultiJS": false,
+    "targetPlatforms": [
+      "aplite",
+      "basalt",
+      "chalk",
+      "diorite",
+      "emery"
+    ],
+    "watchapp": {
+      "watchface": false
+    },
+    "resources": {
+      "media": []
+    },
+    "messageKeys": {}
+  }
+}
