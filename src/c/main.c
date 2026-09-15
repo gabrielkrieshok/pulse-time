@@ -2,13 +2,15 @@
  * Pulse Time — Foreground App
  *
  * Control panel for the background worker.
- *   SELECT: start / stop the background worker
- *   UP:     cycle mode (Terse → Digits → Morse)
- *   DOWN:   cycle vibe preset (Standard → Gentle → Strong)
+ *   SELECT:       start / stop the background worker
+ *   SELECT (hold): test vibe (plays the current time)
+ *   UP:           cycle mode (Terse → Digits → Morse)
+ *   UP (hold):    toggle hourly chime
+ *   DOWN:         cycle vibe preset (Standard → Gentle → Strong → Learn)
  *
  * Open this app once to configure, then close it.
  * The worker keeps running behind any watchface.
- * Tap your wrist to feel the time.
+ * Double-tap your wrist to feel the time.
  */
 
 #include <pebble.h>
@@ -19,19 +21,22 @@ DEFINE_PRESETS  // expands the preset table
 // --- State ---
 static int s_current_preset;
 static PulseTimeMode s_current_mode;
+static bool s_chime_enabled;
 
 // --- UI ---
 static Window    *s_main_window;
 static TextLayer *s_title_layer;
 static TextLayer *s_status_layer;
 static TextLayer *s_mode_layer;
-static TextLayer *s_preset_layer;
 static TextLayer *s_desc_layer;
+static TextLayer *s_preset_layer;
+static TextLayer *s_chime_layer;
 static TextLayer *s_hint_layer;
 
 static char s_status_buf[32];
 static char s_mode_buf[32];
 static char s_preset_buf[32];
+static char s_chime_buf[32];
 
 // --- Helpers ---
 
@@ -43,6 +48,7 @@ static void save_settings(void) {
   persist_write_int(STORAGE_KEY_GAP_INTER,  p->gap_inter);
   persist_write_int(STORAGE_KEY_PRESET,     s_current_preset);
   persist_write_int(STORAGE_KEY_MODE,       (int)s_current_mode);
+  persist_write_int(STORAGE_KEY_CHIME,      s_chime_enabled ? 1 : 0);
 }
 
 static void notify_worker(uint16_t type) {
@@ -53,14 +59,10 @@ static void notify_worker(uint16_t type) {
 
 static const char* mode_description(PulseTimeMode mode) {
   switch (mode) {
-    case MODE_TERSE:
-      return "5h groups + quarters\n~15 min accuracy";
-    case MODE_DIGITS:
-      return "10h/1h + 10m/1m\nMinute precision";
-    case MODE_MORSE:
-      return "Each digit in\nMorse code";
-    default:
-      return "";
+    case MODE_TERSE:  return "5h + 1h, then quarters";
+    case MODE_DIGITS: return "10s + 1s digits, to the minute";
+    case MODE_MORSE:  return "Each digit in Morse";
+    default:          return "";
   }
 }
 
@@ -78,14 +80,17 @@ static void update_ui(void) {
   // Mode
   snprintf(s_mode_buf, sizeof(s_mode_buf), "Mode: %s", mode_name(s_current_mode));
   text_layer_set_text(s_mode_layer, s_mode_buf);
-
-  // Mode description
   text_layer_set_text(s_desc_layer, mode_description(s_current_mode));
 
   // Preset
   snprintf(s_preset_buf, sizeof(s_preset_buf), "Vibe: %s",
            s_presets[s_current_preset].name);
   text_layer_set_text(s_preset_layer, s_preset_buf);
+
+  // Chime
+  snprintf(s_chime_buf, sizeof(s_chime_buf), "Hourly chime: %s",
+           s_chime_enabled ? "On" : "Off");
+  text_layer_set_text(s_chime_layer, s_chime_buf);
 }
 
 // --- Button handlers ---
@@ -111,7 +116,7 @@ static void up_click_handler(ClickRecognizerRef recognizer, void *context) {
   save_settings();
   notify_worker(MSG_KEY_SETTINGS);
   update_ui();
-  vibes_short_pulse();  // feedback
+  vibes_short_pulse();  // feedback: one pulse = mode changed
 }
 
 static void down_click_handler(ClickRecognizerRef recognizer, void *context) {
@@ -119,7 +124,16 @@ static void down_click_handler(ClickRecognizerRef recognizer, void *context) {
   save_settings();
   notify_worker(MSG_KEY_SETTINGS);
   update_ui();
-  vibes_double_pulse();  // feedback
+  vibes_double_pulse();  // feedback: two pulses = preset changed
+}
+
+// Long-press UP: toggle hourly chime
+static void up_long_handler(ClickRecognizerRef recognizer, void *context) {
+  s_chime_enabled = !s_chime_enabled;
+  save_settings();
+  notify_worker(MSG_KEY_SETTINGS);
+  update_ui();
+  vibes_long_pulse();  // feedback: one long pulse = chime toggled
 }
 
 // Long-press SELECT: trigger a test vibe via the worker
@@ -132,71 +146,57 @@ static void click_config_provider(void *context) {
   window_single_click_subscribe(BUTTON_ID_UP, up_click_handler);
   window_single_click_subscribe(BUTTON_ID_DOWN, down_click_handler);
   window_long_click_subscribe(BUTTON_ID_SELECT, 700, select_long_handler, NULL);
+  window_long_click_subscribe(BUTTON_ID_UP, 700, up_long_handler, NULL);
 }
 
 // --- Window ---
+
+static TextLayer* add_text_layer(Layer *root, GRect frame, const char *font_key,
+                                 GColor color) {
+  TextLayer *tl = text_layer_create(frame);
+  text_layer_set_text_alignment(tl, GTextAlignmentCenter);
+  text_layer_set_font(tl, fonts_get_system_font(font_key));
+  text_layer_set_background_color(tl, GColorClear);
+  text_layer_set_text_color(tl, color);
+  layer_add_child(root, text_layer_get_layer(tl));
+  return tl;
+}
 
 static void main_window_load(Window *window) {
   Layer *root = window_get_root_layer(window);
   GRect bounds = layer_get_bounds(root);
   int w = bounds.size.w;
-
   int y = 4;
 
-  // Title
-  s_title_layer = text_layer_create(GRect(0, y, w, 28));
+  s_title_layer = add_text_layer(root, GRect(0, y, w, 26),
+                                 FONT_KEY_GOTHIC_24_BOLD, GColorWhite);
   text_layer_set_text(s_title_layer, "Pulse Time");
-  text_layer_set_text_alignment(s_title_layer, GTextAlignmentCenter);
-  text_layer_set_font(s_title_layer, fonts_get_system_font(FONT_KEY_GOTHIC_24_BOLD));
-  text_layer_set_background_color(s_title_layer, GColorClear);
-  text_layer_set_text_color(s_title_layer, GColorWhite);
-  layer_add_child(root, text_layer_get_layer(s_title_layer));
-  y += 30;
+  y += 26;
 
-  // Status
-  s_status_layer = text_layer_create(GRect(0, y, w, 20));
-  text_layer_set_text_alignment(s_status_layer, GTextAlignmentCenter);
-  text_layer_set_font(s_status_layer, fonts_get_system_font(FONT_KEY_GOTHIC_18_BOLD));
-  text_layer_set_background_color(s_status_layer, GColorClear);
-  layer_add_child(root, text_layer_get_layer(s_status_layer));
-  y += 24;
+  s_status_layer = add_text_layer(root, GRect(0, y, w, 20),
+                                  FONT_KEY_GOTHIC_18_BOLD, GColorWhite);
+  y += 20;
 
-  // Mode
-  s_mode_layer = text_layer_create(GRect(0, y, w, 20));
-  text_layer_set_text_alignment(s_mode_layer, GTextAlignmentCenter);
-  text_layer_set_font(s_mode_layer, fonts_get_system_font(FONT_KEY_GOTHIC_18));
-  text_layer_set_background_color(s_mode_layer, GColorClear);
-  text_layer_set_text_color(s_mode_layer, GColorWhite);
-  layer_add_child(root, text_layer_get_layer(s_mode_layer));
-  y += 22;
+  s_mode_layer = add_text_layer(root, GRect(0, y, w, 20),
+                                FONT_KEY_GOTHIC_18, GColorWhite);
+  y += 20;
 
-  // Mode description
-  s_desc_layer = text_layer_create(GRect(8, y, w - 16, 32));
-  text_layer_set_text_alignment(s_desc_layer, GTextAlignmentCenter);
-  text_layer_set_font(s_desc_layer, fonts_get_system_font(FONT_KEY_GOTHIC_14));
-  text_layer_set_background_color(s_desc_layer, GColorClear);
-  text_layer_set_text_color(s_desc_layer, GColorDarkGray);
-  layer_add_child(root, text_layer_get_layer(s_desc_layer));
-  y += 34;
+  s_desc_layer = add_text_layer(root, GRect(8, y, w - 16, 16),
+                                FONT_KEY_GOTHIC_14, GColorLightGray);
+  y += 18;
 
-  // Preset
-  s_preset_layer = text_layer_create(GRect(0, y, w, 20));
-  text_layer_set_text_alignment(s_preset_layer, GTextAlignmentCenter);
-  text_layer_set_font(s_preset_layer, fonts_get_system_font(FONT_KEY_GOTHIC_18));
-  text_layer_set_background_color(s_preset_layer, GColorClear);
-  text_layer_set_text_color(s_preset_layer, GColorWhite);
-  layer_add_child(root, text_layer_get_layer(s_preset_layer));
-  y += 24;
+  s_preset_layer = add_text_layer(root, GRect(0, y, w, 20),
+                                  FONT_KEY_GOTHIC_18, GColorWhite);
+  y += 20;
 
-  // Hint
-  s_hint_layer = text_layer_create(GRect(4, y, w - 8, 30));
+  s_chime_layer = add_text_layer(root, GRect(0, y, w, 20),
+                                 FONT_KEY_GOTHIC_18, GColorWhite);
+  y += 20;
+
+  s_hint_layer = add_text_layer(root, GRect(4, y, w - 8, 30),
+                                FONT_KEY_GOTHIC_14, GColorLightGray);
   text_layer_set_text(s_hint_layer,
-    "UP mode  SEL on/off  DN preset");
-  text_layer_set_text_alignment(s_hint_layer, GTextAlignmentCenter);
-  text_layer_set_font(s_hint_layer, fonts_get_system_font(FONT_KEY_GOTHIC_14));
-  text_layer_set_background_color(s_hint_layer, GColorClear);
-  text_layer_set_text_color(s_hint_layer, GColorLightGray);
-  layer_add_child(root, text_layer_get_layer(s_hint_layer));
+    "UP mode  SEL on/off  DN vibe\nhold UP chime  hold SEL test");
 
   update_ui();
 }
@@ -207,6 +207,7 @@ static void main_window_unload(Window *window) {
   text_layer_destroy(s_mode_layer);
   text_layer_destroy(s_desc_layer);
   text_layer_destroy(s_preset_layer);
+  text_layer_destroy(s_chime_layer);
   text_layer_destroy(s_hint_layer);
 }
 
@@ -221,6 +222,7 @@ static void init(void) {
   int mode = (int)persist_read_int(STORAGE_KEY_MODE);
   s_current_mode = (mode >= 0 && mode < MODE_COUNT) ?
                    (PulseTimeMode)mode : MODE_TERSE;
+  s_chime_enabled = persist_read_int(STORAGE_KEY_CHIME) != 0;
 
   // Ensure settings are persisted (first run)
   save_settings();

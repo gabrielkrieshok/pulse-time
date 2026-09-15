@@ -3,7 +3,7 @@
  *
  * Constants shared between the foreground app and background worker.
  * Both files include this header so storage keys and message types
- * stay in sync.
+ * stay in sync. (build.sh copies src/c/pulse_time.h → worker_src/c/.)
  */
 
 #pragma once
@@ -17,10 +17,11 @@
 #define STORAGE_KEY_GAP_INTER    0x13
 #define STORAGE_KEY_PRESET       0x14
 #define STORAGE_KEY_MODE         0x15
+#define STORAGE_KEY_CHIME        0x16   // hourly chime on/off (0/1)
 
 // --- AppWorkerMessage types ---
-#define MSG_KEY_TRIGGER   0
-#define MSG_KEY_SETTINGS  1
+#define MSG_KEY_TRIGGER   0   // play the current time now (test vibe)
+#define MSG_KEY_SETTINGS  1   // settings changed; reload from storage
 
 // --- Time-telling modes ---
 typedef enum {
@@ -41,7 +42,7 @@ typedef struct {
 
 // Preset table (defined identically in both compilation units
 // to avoid linker issues with the separate worker build)
-#define NUM_PRESETS 3
+#define NUM_PRESETS 4
 
 #define DEFINE_PRESETS \
   static const VibePreset s_presets[NUM_PRESETS] = { \
@@ -65,6 +66,13 @@ typedef struct {
       .vibe_short = 150, \
       .gap_intra  = 80, \
       .gap_inter  = 450, \
+    }, \
+    { \
+      .name       = "Learn", \
+      .vibe_long  = 600, \
+      .vibe_short = 200, \
+      .gap_intra  = 250, \
+      .gap_inter  = 1200, \
     }, \
   };
 

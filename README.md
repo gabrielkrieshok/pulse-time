@@ -2,10 +2,10 @@
 
 Feel the current time through vibration patterns on your Pebble smartwatch — no
 need to look at your wrist. Pulse Time runs as a **background worker** behind
-any watchface, so it's always available. Just tap your wrist and the watch
-vibrates the current time.
+any watchface, so it's always available. Just double-tap your wrist and the
+watch vibrates the current time.
 
-**Tap your wrist, feel the time.**
+**Double-tap your wrist, feel the time.**
 
 ## Why?
 
@@ -23,7 +23,8 @@ modes that trade off simplicity against precision.
 
 Every mode works the same way:
 
-1. You **tap your wrist** (a deliberate flick, not just walking motion)
+1. You **double-tap your wrist** — two deliberate knocks within about
+   0.8 seconds (a single bump from walking or gesturing won't trigger it)
 2. The watch vibrates one or more **groups** of pulses, separated by longer pauses
 3. You decode the groups to read the time
 
@@ -108,7 +109,7 @@ the rhythm predictable.
 | 5     | `.....`  | short short short short short        |
 | 6     | `-....`  | long short short short short         |
 | 7     | `--...`  | long long short short short          |
-| 8     | `---..'  | long long long short short           |
+| 8     | `---..`  | long long long short short           |
 | 9     | `----.`  | long long long long short            |
 
 **Examples:**
@@ -133,7 +134,7 @@ the rhythm predictable.
 5. Press **BACK** to return to your watchface
 
 That's it. The worker now runs in the background behind whatever watchface
-you use. **Tap your wrist** at any time to feel the time.
+you use. **Double-tap your wrist** at any time to feel the time.
 
 ### Controls
 
@@ -142,20 +143,24 @@ you use. **Tap your wrist** at any time to feel the time.
 | **SELECT** (press)  | Start or stop the background worker             |
 | **SELECT** (hold)   | Trigger a test vibe (useful while configuring)   |
 | **UP**              | Cycle mode: Terse &rarr; Digits &rarr; Morse    |
-| **DOWN**            | Cycle preset: Standard &rarr; Gentle &rarr; Strong |
+| **UP** (hold)       | Toggle the hourly chime on/off                   |
+| **DOWN**            | Cycle preset: Standard &rarr; Gentle &rarr; Strong &rarr; Learn |
 | **BACK**            | Exit the app (worker keeps running)              |
 
-When you press UP or DOWN, the watch gives a short haptic confirmation
-(single pulse for mode change, double pulse for preset change) so you
-can tell the setting changed without looking.
+When you change a setting, the watch gives a haptic confirmation so you
+can tell it took without looking: one short pulse for a mode change, two
+short pulses for a preset change, one long pulse for toggling the chime.
 
 ### Day-to-Day Use
 
 Once configured, you never need to open the app again. From any watchface:
 
-- **Tap your wrist** — a deliberate flick or knock — and the time is
+- **Double-tap your wrist** — two deliberate knocks — and the time is
   vibrated in the mode you chose
 - If you tap while a pattern is already playing, it's ignored (debounce)
+- With the **hourly chime** on, the watch vibrates just the hour (in your
+  current mode) at the top of every hour, so you can keep loose track of
+  time without ever tapping
 - Settings persist across reboots; the worker restarts automatically
 
 You can find the worker under **Settings &rarr; Background App** on your
@@ -172,16 +177,17 @@ Presets control the vibration timing. Each preset defines four values:
 | **Long vibe** | Duration of a long/dash vibration (ms)              |
 | **Short vibe**| Duration of a short/dot vibration (ms)              |
 | **Intra gap** | Pause between vibrations *within* a group (ms)      |
-| **Inter gap** | Pause between groups (implemented via tick timer)    |
+| **Inter gap** | Pause between groups (ms)                          |
 
-| Preset     | Long  | Short | Intra gap | Inter gap | Character                     |
-|------------|-------|-------|-----------|-----------|-------------------------------|
-| **Standard** | 400ms | 120ms | 100ms    | 500ms     | Balanced, easy to count       |
-| **Gentle**   | 300ms | 80ms  | 120ms    | 600ms     | Subtler, easier on battery    |
-| **Strong**   | 500ms | 150ms | 80ms     | 450ms     | Very distinct, harder to miss |
+| Preset       | Long  | Short | Intra gap | Inter gap | Character                          |
+|--------------|-------|-------|-----------|-----------|------------------------------------|
+| **Standard** | 400ms | 120ms | 100ms     | 500ms     | Balanced, easy to count            |
+| **Gentle**   | 300ms | 80ms  | 120ms     | 600ms     | Subtler, easier on battery         |
+| **Strong**   | 500ms | 150ms | 80ms      | 450ms     | Very distinct, harder to miss      |
+| **Learn**    | 600ms | 200ms | 250ms     | 1200ms    | Slow and spacious, for learning    |
 
-The inter-group pause uses the Pebble's `SECOND_UNIT` tick timer, so it's
-roughly 1 second in practice (the minimum resolution available to workers).
+Start on **Learn** while the patterns are new, then move to Standard once
+you can read them without thinking.
 
 ---
 
@@ -206,12 +212,16 @@ roughly 1 second in practice (the minimum resolution available to workers).
 |  (worker_src/c/)             |
 |                              |
 |  Listens for accel taps      |
+|  (double-tap within 800 ms)  |
 |  Reads mode + settings from  |
 |  persistent storage          |
 |                              |
 |  Encodes time as vibe groups |
 |  Plays groups sequentially,  |
-|  chained via TickTimerService |
+|  chained via AppTimer        |
+|                              |
+|  Optional hourly chime via   |
+|  TickTimerService (HOUR_UNIT)|
 +------------------------------+
 ```
 
@@ -223,8 +233,13 @@ waiting for the next tap).
 **Playback engine:** Each mode encodes the time into 1-6 "vibe groups."
 Each group is an array of alternating on/off durations fed to the Pebble
 `vibes_enqueue_custom_pattern()` API. The worker plays the first group
-immediately, then uses a `SECOND_UNIT` tick timer to chain remaining groups
-with pauses in between.
+immediately, then chains the remaining groups with an `AppTimer` set to the
+group's duration plus the preset's inter-group gap, so the pauses are the
+real millisecond values from the preset table.
+
+**Hourly chime:** When enabled, the worker subscribes to the tick timer at
+`MINUTE_UNIT` and, whenever the `HOUR_UNIT` flag flips, plays only the hour
+group(s) of the current mode. Off by default.
 
 **Debouncing:** If a tap arrives while a pattern is still playing, it's
 silently ignored.
@@ -287,8 +302,11 @@ pebble install --phone 192.168.1.42
   (5 hours in Terse, 10s digit in Digits), shorts are the remainder.
 - **Use the test vibe** (long-press SELECT in the app) to practice at
   known times until the patterns become second nature.
-- **Try Gentle preset first.** The wider intra-gap (120ms) makes individual
-  vibes easier to distinguish while you're learning.
+- **Use the Learn preset first.** Everything is slower and the gaps are
+  wider, so individual vibes and group boundaries are easy to pick out.
+  Switch to Standard once you stop having to count.
+- **Turn on the hourly chime.** Feeling the hour once an hour, at a moment
+  you can check against a clock, is painless repetition.
 - **Morse mode** is the hardest to learn but the most precise at
   minute-level. It helps if you already know Morse code for digits.
 
@@ -301,12 +319,14 @@ pebble install --phone 192.168.1.42
   If another app's worker is running, you'll be prompted to choose which
   to keep.
 - **Tap sensitivity:** The accelerometer tap detection has a built-in
-  threshold. A deliberate wrist tap or knock triggers it reliably; normal
-  walking and gesturing generally do not.
-- **Group chaining:** The worker uses `SECOND_UNIT` tick timer to chain
-  vibe groups, giving roughly 1-second granularity on inter-group pauses.
-  This is a pragmatic tradeoff for the worker's limited memory budget
-  (10.5 kB).
+  threshold, and Pulse Time additionally requires two taps within 800 ms.
+  A deliberate double knock triggers it reliably; a single bump from
+  walking or gesturing does not.
+- **Hourly chime and battery:** The chime keeps a once-a-minute tick
+  subscription alive in the worker. That's cheap, but it's still more than
+  nothing — leave it off if you're squeezing every hour out of a charge.
+- **Midnight in 24-hour mode:** Hour 0 has no vibes in Terse and Digits
+  modes, so 00:05 plays only the minute group. Morse mode plays `-----`.
 - **Clock format:** Pulse Time follows your Pebble's system clock setting.
   In 12-hour mode, midnight and noon are both represented as 12. In 24-hour
   mode, hours range from 0 to 23.
@@ -323,6 +343,11 @@ Time), Chalk (Pebble Time Round), Diorite (Pebble 2), and Emery
 
 Works with original Pebble watches via [Rebble](https://rebble.io) and
 the Pebble 2 Duo / Pebble Time 2 from Core Devices.
+
+## Project links
+
+- Code and issues: https://github.com/gabrielkrieshok/pulse-time
+- Rebble developer docs: https://developer.rebble.io/
 
 ## License
 
