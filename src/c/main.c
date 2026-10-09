@@ -48,6 +48,7 @@ static uint16_t s_practice_hour, s_practice_minute;
 static Window    *s_main_window;
 static MenuLayer *s_menu_layer;
 static Window    *s_help_window;
+static ScrollLayer *s_help_scroll;
 static TextLayer *s_help_text;
 
 // --- Helpers ---
@@ -146,22 +147,45 @@ static void menu_draw_row(GContext *gctx, const Layer *cell_layer,
 static void help_window_load(Window *window) {
   Layer *root = window_get_root_layer(window);
   GRect bounds = layer_get_bounds(root);
-  s_help_text = text_layer_create(
-      GRect(8, PBL_IF_ROUND_ELSE(24, 4), bounds.size.w - 16, bounds.size.h - 8));
+  int pad_x = PBL_IF_ROUND_ELSE(18, 8);
+
+  // UP/DOWN scroll the text; it is taller than the screen.
+  s_help_scroll = scroll_layer_create(bounds);
+  scroll_layer_set_click_config_onto_window(s_help_scroll, window);
+
+  GRect text_frame = GRect(pad_x, PBL_IF_ROUND_ELSE(24, 4),
+                           bounds.size.w - 2 * pad_x, 2000);
+  s_help_text = text_layer_create(text_frame);
   text_layer_set_font(s_help_text, fonts_get_system_font(FONT_KEY_GOTHIC_18));
   text_layer_set_text_alignment(s_help_text,
                                 PBL_IF_ROUND_ELSE(GTextAlignmentCenter,
                                                   GTextAlignmentLeft));
   text_layer_set_text(s_help_text,
     "Triple-tap your wrist to feel the time.\n\n"
-    "A step-by-step guide with a pattern player lives in the Pebble phone "
-    "app: open Pulse Time and tap the settings gear.");
-  layer_add_child(root, text_layer_get_layer(s_help_text));
+    "Long buzz = big unit, short buzz = small unit.\n\n"
+    "Terse: hours first (long = 5, short = 1), pause, then long = 15 min.\n\n"
+    "Digits: hours, then minutes. Long = tens, short = ones.\n\n"
+    "Morse: every digit is 5 buzzes (long = dash, short = dot).\n\n"
+    "For a full guide and a pattern player, open Pulse Time in the Pebble "
+    "phone app and tap the settings gear.");
+
+  // Size the text layer to its content, then tell the scroll layer how far to scroll.
+  GSize content = text_layer_get_content_size(s_help_text);
+  text_frame.size.h = content.h + 4;
+  layer_set_frame(text_layer_get_layer(s_help_text), text_frame);
+  scroll_layer_set_content_size(s_help_scroll,
+      GSize(bounds.size.w, text_frame.origin.y + text_frame.size.h +
+                           PBL_IF_ROUND_ELSE(32, 12)));
+
+  scroll_layer_add_child(s_help_scroll, text_layer_get_layer(s_help_text));
+  layer_add_child(root, scroll_layer_get_layer(s_help_scroll));
 }
 
 static void help_window_unload(Window *window) {
   text_layer_destroy(s_help_text);
+  scroll_layer_destroy(s_help_scroll);
   s_help_text = NULL;
+  s_help_scroll = NULL;
 }
 
 static void menu_select(MenuLayer *layer, MenuIndex *idx, void *ctx) {
