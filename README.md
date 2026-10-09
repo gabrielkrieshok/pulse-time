@@ -2,10 +2,10 @@
 
 Feel the current time through vibration patterns on your Pebble smartwatch — no
 need to look at your wrist. Pulse Time runs as a **background worker** behind
-any watchface, so it's always available. Just double-tap your wrist and the
+any watchface, so it's always available. Just triple-tap your wrist and the
 watch vibrates the current time.
 
-**Double-tap your wrist, feel the time.**
+**Triple-tap your wrist, feel the time.**
 
 ## Why?
 
@@ -23,8 +23,8 @@ modes that trade off simplicity against precision.
 
 Every mode works the same way:
 
-1. You **double-tap your wrist** — two deliberate knocks within about
-   0.8 seconds (a single bump from walking or gesturing won't trigger it)
+1. You **triple-tap your wrist** — three deliberate knocks, each within about
+   0.8 seconds of the last (a single bump from walking or gesturing won't trigger it)
 2. The watch vibrates one or more **groups** of pulses, separated by longer pauses
 3. You decode the groups to read the time
 
@@ -134,7 +134,7 @@ the rhythm predictable.
 5. Press **BACK** to return to your watchface
 
 That's it. The worker now runs in the background behind whatever watchface
-you use. **Double-tap your wrist** at any time to feel the time.
+you use. **Triple-tap your wrist** at any time to feel the time.
 
 ### Controls
 
@@ -164,16 +164,21 @@ time, see the long/short pulses drawn out, hear them with the real vibe
 timings, or choose **Buzz it on my watch** to feel exactly that time. It also
 sets mode, vibe and chime.
 
+The page also lets you set **quiet hours** for the hourly chime (default 22:00
+&ndash; 07:00 once switched on). The chime stays silent between those hours.
+
 Notes: the page is hosted on GitHub Pages (`docs/index.html`), so it needs a
 connection to load. "Buzz it on my watch" saves and closes the page, then
-plays the time; Pulse Time should be open or its worker running. Settings
-changed while the watch app is closed are delivered the next time it opens.
+plays the time, starting the worker if it isn't running. When the watch app opens
+it sends its current settings to the phone, so the page always opens on what the
+watch actually has. A change saved while the watch app is closed is delivered the
+next time it opens.
 
 ### Day-to-Day Use
 
 Once configured, you never need to open the app again. From any watchface:
 
-- **Double-tap your wrist** — two deliberate knocks — and the time is
+- **Triple-tap your wrist** — three deliberate knocks — and the time is
   vibrated in the mode you chose
 - If you tap while a pattern is already playing, it's ignored (debounce)
 - With the **hourly chime** on, the watch vibrates just the hour (in your
@@ -229,7 +234,7 @@ you can read them without thinking.
 |  (worker_src/c/)             |
 |                              |
 |  Listens for accel taps      |
-|  (double-tap within 800 ms)  |
+|  (triple-tap, 800 ms apart)  |
 |  Reads mode + settings from  |
 |  persistent storage          |
 |                              |
@@ -254,7 +259,7 @@ immediately, then chains the remaining groups with an `AppTimer` set to the
 group's duration plus the preset's inter-group gap, so the pauses are the
 real millisecond values from the preset table.
 
-**Hourly chime:** When enabled, the worker subscribes to the tick timer at
+**Hourly chime:** When enabled (and outside quiet hours), the worker subscribes to the tick timer at
 `MINUTE_UNIT` and, whenever the `HOUR_UNIT` flag flips, plays only the hour
 group(s) of the current mode. Off by default.
 
@@ -338,14 +343,15 @@ pebble install --phone 192.168.1.42
   If another app's worker is running, you'll be prompted to choose which
   to keep.
 - **Tap sensitivity:** The accelerometer tap detection has a built-in
-  threshold, and Pulse Time additionally requires two taps within 800 ms.
-  A deliberate double knock triggers it reliably; a single bump from
+  threshold, and Pulse Time additionally requires three taps, each within 800 ms of the
+  last. A deliberate triple knock triggers it reliably; a single bump from
   walking or gesturing does not.
 - **Hourly chime and battery:** The chime keeps a once-a-minute tick
   subscription alive in the worker. That's cheap, but it's still more than
   nothing — leave it off if you're squeezing every hour out of a charge.
-- **Midnight in 24-hour mode:** Hour 0 has no vibes in Terse and Digits
-  modes, so 00:05 plays only the minute group. Morse mode plays `-----`.
+- **Midnight in 24-hour mode:** Hour 0 is **short, long** in Terse and Digits
+  modes. Every real hour group puts its longs first, so that reversed pair can't
+  be mistaken for one. Morse mode plays `-----`.
 - **Clock format:** Pulse Time follows your Pebble's system clock setting.
   In 12-hour mode, midnight and noon are both represented as 12. In 24-hour
   mode, hours range from 0 to 23.

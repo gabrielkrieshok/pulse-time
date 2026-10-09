@@ -68,14 +68,14 @@
   summary { cursor: pointer; font-weight: 600; padding: 6px 0; }
   .note { font-size: 14px; color: var(--muted); }
   code { background: var(--card); padding: 1px 5px; border-radius: 5px; }
-  .hide { display: none; }
+  .hide { display: none !important; }
 </style>
 </head>
 <body>
 <main>
   <h1>Pulse Time</h1>
-  <p class="sub">Feel the time through your watch. Double-tap your wrist to hear
-  nothing and feel everything. Use this page to learn the patterns and change settings.</p>
+  <p class="sub">Feel the time through your watch. Triple-tap your wrist and it buzzes the time
+  in long and short pulses. Use this page to learn the patterns and change settings.</p>
 
   <h2>Settings</h2>
   <div class="card">
@@ -86,6 +86,14 @@
     <label class="row" style="margin-top:8px">
       <span>Hourly chime <span class="note">(buzz the hour at the top of every hour)</span></span>
       <input type="checkbox" id="chime">
+    </label>
+    <label class="row">
+      <span>Quiet hours <span class="note">(no chime between these hours)</span></span>
+      <input type="checkbox" id="quiet">
+    </label>
+    <label class="row" id="quietRange">
+      <span class="note">From / until</span>
+      <span><select id="qs" aria-label="Quiet from"></select> &ndash; <select id="qe" aria-label="Quiet until"></select></span>
     </label>
   </div>
 
@@ -108,8 +116,8 @@
       <button class="btn primary" id="playWatch">Buzz it on my watch</button>
     </div>
     <p class="note" style="margin-top:8px">&ldquo;Buzz it on my watch&rdquo; saves your settings,
-    closes this page and plays the time you picked on the watch. Pulse Time needs to be running
-    (open it on the watch once).</p>
+    closes this page and plays the time you picked on the watch. Open Pulse Time on the watch at
+    least once first so it is installed and configured.</p>
   </div>
 
   <h2>How to read it</h2>
@@ -118,6 +126,7 @@
     <p>Hours first: each <b>long</b> is 5 hours, each <b>short</b> is 1 hour. Pause. Then each
     <b>long</b> is a quarter hour (none means it is before :15).</p>
     <p class="note">7:20 &rarr; long, short, short &middot; pause &middot; long.</p>
+    <p class="note">On a 24-hour clock, hour 0 (midnight) is <b>short, long</b> &mdash; the reverse of a normal hour group, so it can&rsquo;t be mistaken for one.</p>
   </details>
   <details>
     <summary>Digits &mdash; exact minute</summary>
@@ -159,7 +168,10 @@
   var state = {
     mode: clamp(+q.get('mode') || 0, 0, 2),
     preset: clamp(+q.get('preset') || 0, 0, 3),
-    chime: q.get('chime') === '1'
+    chime: q.get('chime') === '1',
+    quiet: q.get('quiet') === '1',
+    qs: q.has('qs') ? clamp(+q.get('qs'), 0, 23) : 22,
+    qe: q.has('qe') ? clamp(+q.get('qe'), 0, 23) : 7
   };
   var $ = function (id) { return document.getElementById(id); };
 
@@ -172,11 +184,13 @@
     var g = [];
     if (mode === 0) {
       var h = rep('L', Math.floor(hour / 5)) + rep('S', hour % 5);
+      if (hour === 0) h = 'SL';   // hour-zero marker: short, long (never a real hour)
       if (h) g.push({ label: 'Hours', p: h });
       var qn = Math.floor(minute / 15);
       if (qn) g.push({ label: 'Quarter hours', p: rep('L', qn) });
     } else if (mode === 1) {
       var hh = rep('L', Math.floor(hour / 10)) + rep('S', hour % 10);
+      if (hour === 0) hh = 'SL';  // hour-zero marker: short, long (never a real hour)
       if (hh) g.push({ label: 'Hours', p: hh });
       var tm = Math.floor(minute / 10), om = minute % 10;
       if (tm || om) g.push({ label: 'Minutes', p: rep('L', tm) + rep('S', om) });
@@ -215,6 +229,15 @@
   $('mm').value = now.getMinutes();
   $('h24').checked = !/AM|PM/i.test(now.toLocaleTimeString());
   $('chime').checked = state.chime;
+  $('quiet').checked = state.quiet;
+  [$('qs'), $('qe')].forEach(function (sel, i) {
+    for (var h = 0; h < 24; h++) {
+      var o = document.createElement('option');
+      o.value = h; o.textContent = (h < 10 ? '0' : '') + h + ':00';
+      sel.appendChild(o);
+    }
+    sel.value = i === 0 ? state.qs : state.qe;
+  });
 
   function readTime() {
     return { h: clamp(+$('hh').value, 0, 23), m: clamp(+$('mm').value, 0, 59) };
@@ -229,6 +252,10 @@
       b.setAttribute('aria-pressed', String(i === state.preset));
     });
     state.chime = $('chime').checked;
+    state.quiet = $('quiet').checked;
+    state.qs = +$('qs').value;
+    state.qe = +$('qe').value;
+    $('quietRange').classList.toggle('hide', !state.quiet);
 
     var t = readTime();
     var shown = displayHour(t.h, $('h24').checked);
@@ -237,7 +264,7 @@
     var lanes = $('lanes');
     lanes.innerHTML = '';
     if (!lastGroups.length) {
-      lanes.innerHTML = '<p class="none">No buzzes at all &mdash; that is midnight in 24-hour Terse or Digits mode.</p>';
+      lanes.innerHTML = '<p class="none">No buzzes at all.</p>';
     }
     lastGroups.forEach(function (g, gi) {
       var lane = document.createElement('div');
@@ -257,7 +284,7 @@
       ' · ' + MODES[state.mode] + ' · ' + PRESETS[state.preset].name + ' vibe';
   }
 
-  ['hh', 'mm', 'h24', 'chime'].forEach(function (id) {
+  ['hh', 'mm', 'h24', 'chime', 'quiet', 'qs', 'qe'].forEach(function (id) {
     $(id).addEventListener('input', refresh);
     $(id).addEventListener('change', refresh);
   });
@@ -302,7 +329,10 @@
 
   // ---- Return to the Pebble app ---------------------------------------
   function close(extra) {
-    var result = { mode: state.mode, preset: state.preset, chime: state.chime ? 1 : 0 };
+    var result = {
+      mode: state.mode, preset: state.preset, chime: state.chime ? 1 : 0,
+      quiet: state.quiet ? 1 : 0, qstart: state.qs, qend: state.qe
+    };
     if (extra) result.practice = extra;
     var ret = q.get('return_to') || 'pebblejs://close#';
     location.href = ret + encodeURIComponent(JSON.stringify(result));

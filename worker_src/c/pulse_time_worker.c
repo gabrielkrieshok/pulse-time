@@ -36,11 +36,15 @@ static uint32_t s_gap_intra;
 static uint32_t s_gap_inter;
 static PulseTimeMode s_mode;
 static bool s_chime_enabled;
+static bool s_quiet_enabled;
+static int  s_quiet_start;
+static int  s_quiet_end;
 
-// --- Double-tap detection ---
-#define DOUBLE_TAP_WINDOW_MS 800  // second tap must arrive within this window
+// --- Triple-tap detection ---
+#define TAPS_REQUIRED       3     // taps needed to trigger
+#define TAP_WINDOW_MS       800   // each tap must follow the previous within this window
 static AppTimer *s_tap_timer;
-static bool s_awaiting_second_tap;
+static int s_tap_count;
 
 // --- Vibe group playback ---
 #define MAX_GROUP_SEGMENTS 32
@@ -90,6 +94,9 @@ static void load_settings(void) {
   s_mode = (mode >= 0 && mode < MODE_COUNT) ? (PulseTimeMode)mode : MODE_TERSE;
 
   s_chime_enabled = load_uint(STORAGE_KEY_CHIME, 0) != 0;
+  s_quiet_enabled = load_uint(STORAGE_KEY_QUIET, 0) != 0;
+  s_quiet_start   = (int)load_uint(STORAGE_KEY_QUIET_START, QUIET_START_DEFAULT) % 24;
+  s_quiet_end     = (int)load_uint(STORAGE_KEY_QUIET_END,   QUIET_END_DEFAULT) % 24;
   apply_chime_subscription();
 }
 
@@ -155,8 +162,17 @@ static void build_morse_digit(VibeGroup *g, int digit) {
 //  "hours only" playback is just the first hour group(s).
 // ================================================================
 
+// Hour 0 (24-hour clock only) has no long or short vibes to count, so it gets
+// its own marker: one short then one long. Every other hour group puts its
+// longs first, so "short, long" can never be mistaken for a real hour.
+static void group_hour_zero(VibeGroup *g) {
+  group_clear(g);
+  group_append(g, s_vibe_short);
+  group_append(g, s_vibe_long);
+}
+
 // TERSE: Apple Watch-style
-//   Group 0: long × (hour/5), short × (hour%5)
+//   Group 0: long × (hour/5), short × (hour%5); hour 0 = short, long
 //   Group 1: long × (minute/15)
 // Gives time to nearest 15 minutes.
 static void encode_terse(int hour, int minute) {
@@ -169,6 +185,7 @@ static void encode_terse(int hour, int minute) {
   int remain_h = hour % 5;
   group_append_n(gh, fives, s_vibe_long);
   group_append_n(gh, remain_h, s_vibe_short);
+  if (hour == 0) group_hour_zero(gh);
   if (gh->count > 0) s_num_groups++;
 
   // Quarter-hours
@@ -182,7 +199,7 @@ static void encode_terse(int hour, int minute) {
 }
 
 // DIGITS: Precise, every minute
-//   Group 0: long × (hour/10), short × (hour%10)
+//   Group 0: long × (hour/10), short × (hour%10); hour 0 = short, long
 //   Group 1: long × (minute/10), short × (minute%10)
 static void encode_digits(int hour, int minute) {
   s_num_groups = 0;
@@ -194,6 +211,7 @@ static void encode_digits(int hour, int minute) {
   int ones_h = hour % 10;
   group_append_n(gh, tens_h, s_vibe_long);
   group_append_n(gh, ones_h, s_vibe_short);
+  if (hour == 0) group_hour_zero(gh);
   if (gh->count > 0) s_num_groups++;
 
   // Minutes
@@ -229,7 +247,7 @@ static void encode_morse(int hour, int minute) {
 static int hour_group_count(int hour) {
   switch (s_mode) {
     case MODE_MORSE: return (hour >= 10) ? 2 : 1;
-    default:         return (hour > 0) ? 1 : 0;
+    default:         return 1;   // hour 0 has its own marker group
   }
 }
 
@@ -325,7 +343,7 @@ static void vibe_time(int hour, int minute) {
   start_playback();
 }
 
-// Double-tap: vibrate the full current time
+// Triple-tap: vibrate the full current time
 static void vibe_current_time(void) {
   int hour, minute;
   time_t now = time(NULL);
@@ -350,35 +368,45 @@ static void vibe_current_hour(void) {
 //  Event handlers
 // ================================================================
 
+// True if `hour` (0-23) falls inside the quiet window. The window may wrap
+// midnight (e.g. 22 -> 7).
+static bool in_quiet_hours(int hour) {
+  if (!s_quiet_enabled || s_quiet_start == s_quiet_end) return false;
+  if (s_quiet_start < s_quiet_end) {
+    return hour >= s_quiet_start && hour < s_quiet_end;
+  }
+  return hour >= s_quiet_start || hour < s_quiet_end;
+}
+
 static void chime_tick_handler(struct tm *tick_time, TimeUnits units_changed) {
   if (!s_chime_enabled) return;
   if (!(units_changed & HOUR_UNIT)) return;
   if (s_playing) return;
+  if (in_quiet_hours(tick_time->tm_hour)) return;
   vibe_current_hour();
 }
 
 static void tap_timeout_handler(void *data) {
-  // Window expired without a second tap — reset
+  // Window expired before the next tap — reset
   s_tap_timer = NULL;
-  s_awaiting_second_tap = false;
+  s_tap_count = 0;
 }
 
 static void accel_tap_handler(AccelAxisType axis, int32_t direction) {
   if (s_playing) return;  // ignore taps during playback
 
-  if (!s_awaiting_second_tap) {
-    // First tap — start the window
-    s_awaiting_second_tap = true;
-    s_tap_timer = app_timer_register(DOUBLE_TAP_WINDOW_MS,
-                                     tap_timeout_handler, NULL);
-  } else {
-    // Second tap — cancel the timer and fire
-    if (s_tap_timer) {
-      app_timer_cancel(s_tap_timer);
-      s_tap_timer = NULL;
-    }
-    s_awaiting_second_tap = false;
+  // Each tap (re)starts the window for the next one
+  if (s_tap_timer) {
+    app_timer_cancel(s_tap_timer);
+    s_tap_timer = NULL;
+  }
+  s_tap_count++;
+
+  if (s_tap_count >= TAPS_REQUIRED) {
+    s_tap_count = 0;
     vibe_current_time();
+  } else {
+    s_tap_timer = app_timer_register(TAP_WINDOW_MS, tap_timeout_handler, NULL);
   }
 }
 
