@@ -2,10 +2,10 @@
 
 Feel the current time through vibration patterns on your Pebble smartwatch — no
 need to look at your wrist. Pulse Time runs as a **background worker** behind
-any watchface, so it's always available. Just double-tap your wrist and the
+any watchface, so it's always available. Just triple-tap your wrist and the
 watch vibrates the current time.
 
-**Double-tap your wrist, feel the time.**
+**Triple-tap your wrist, feel the time.**
 
 ## Why?
 
@@ -23,8 +23,8 @@ modes that trade off simplicity against precision.
 
 Every mode works the same way:
 
-1. You **double-tap your wrist** — two deliberate knocks within about
-   0.8 seconds (a single bump from walking or gesturing won't trigger it)
+1. You **triple-tap your wrist** — three deliberate knocks, each within about
+   0.8 seconds of the last (a single bump from walking or gesturing won't trigger it)
 2. The watch vibrates one or more **groups** of pulses, separated by longer pauses
 3. You decode the groups to read the time
 
@@ -134,7 +134,7 @@ the rhythm predictable.
 5. Press **BACK** to return to your watchface
 
 That's it. The worker now runs in the background behind whatever watchface
-you use. **Double-tap your wrist** at any time to feel the time.
+you use. **Triple-tap your wrist** at any time to feel the time.
 
 ### Controls
 
@@ -173,7 +173,7 @@ changed while the watch app is closed are delivered the next time it opens.
 
 Once configured, you never need to open the app again. From any watchface:
 
-- **Double-tap your wrist** — two deliberate knocks — and the time is
+- **Triple-tap your wrist** — three deliberate knocks — and the time is
   vibrated in the mode you chose
 - If you tap while a pattern is already playing, it's ignored (debounce)
 - With the **hourly chime** on, the watch vibrates just the hour (in your
@@ -229,7 +229,7 @@ you can read them without thinking.
 |  (worker_src/c/)             |
 |                              |
 |  Listens for accel taps      |
-|  (double-tap within 800 ms)  |
+|  (triple-tap, 800 ms apart)  |
 |  Reads mode + settings from  |
 |  persistent storage          |
 |                              |
@@ -338,8 +338,8 @@ pebble install --phone 192.168.1.42
   If another app's worker is running, you'll be prompted to choose which
   to keep.
 - **Tap sensitivity:** The accelerometer tap detection has a built-in
-  threshold, and Pulse Time additionally requires two taps within 800 ms.
-  A deliberate double knock triggers it reliably; a single bump from
+  threshold, and Pulse Time additionally requires three taps, each within 800 ms of the
+  last. A deliberate triple knock triggers it reliably; a single bump from
   walking or gesturing does not.
 - **Hourly chime and battery:** The chime keeps a once-a-minute tick
   subscription alive in the worker. That's cheap, but it's still more than

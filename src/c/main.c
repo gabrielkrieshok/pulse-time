@@ -119,7 +119,7 @@ static void help_window_load(Window *window) {
                                 PBL_IF_ROUND_ELSE(GTextAlignmentCenter,
                                                   GTextAlignmentLeft));
   text_layer_set_text(s_help_text,
-    "Double-tap your wrist to feel the time.\n\n"
+    "Triple-tap your wrist to feel the time.\n\n"
     "A step-by-step guide with a pattern player lives in the Pebble phone "
     "app: open Pulse Time and tap the settings gear.");
   layer_add_child(root, text_layer_get_layer(s_help_text));

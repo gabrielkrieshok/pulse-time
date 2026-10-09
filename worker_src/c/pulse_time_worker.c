@@ -37,10 +37,11 @@ static uint32_t s_gap_inter;
 static PulseTimeMode s_mode;
 static bool s_chime_enabled;
 
-// --- Double-tap detection ---
-#define DOUBLE_TAP_WINDOW_MS 800  // second tap must arrive within this window
+// --- Triple-tap detection ---
+#define TAPS_REQUIRED       3     // taps needed to trigger
+#define TAP_WINDOW_MS       800   // each tap must follow the previous within this window
 static AppTimer *s_tap_timer;
-static bool s_awaiting_second_tap;
+static int s_tap_count;
 
 // --- Vibe group playback ---
 #define MAX_GROUP_SEGMENTS 32
@@ -325,7 +326,7 @@ static void vibe_time(int hour, int minute) {
   start_playback();
 }
 
-// Double-tap: vibrate the full current time
+// Triple-tap: vibrate the full current time
 static void vibe_current_time(void) {
   int hour, minute;
   time_t now = time(NULL);
@@ -358,27 +359,26 @@ static void chime_tick_handler(struct tm *tick_time, TimeUnits units_changed) {
 }
 
 static void tap_timeout_handler(void *data) {
-  // Window expired without a second tap — reset
+  // Window expired before the next tap — reset
   s_tap_timer = NULL;
-  s_awaiting_second_tap = false;
+  s_tap_count = 0;
 }
 
 static void accel_tap_handler(AccelAxisType axis, int32_t direction) {
   if (s_playing) return;  // ignore taps during playback
 
-  if (!s_awaiting_second_tap) {
-    // First tap — start the window
-    s_awaiting_second_tap = true;
-    s_tap_timer = app_timer_register(DOUBLE_TAP_WINDOW_MS,
-                                     tap_timeout_handler, NULL);
-  } else {
-    // Second tap — cancel the timer and fire
-    if (s_tap_timer) {
-      app_timer_cancel(s_tap_timer);
-      s_tap_timer = NULL;
-    }
-    s_awaiting_second_tap = false;
+  // Each tap (re)starts the window for the next one
+  if (s_tap_timer) {
+    app_timer_cancel(s_tap_timer);
+    s_tap_timer = NULL;
+  }
+  s_tap_count++;
+
+  if (s_tap_count >= TAPS_REQUIRED) {
+    s_tap_count = 0;
     vibe_current_time();
+  } else {
+    s_tap_timer = app_timer_register(TAP_WINDOW_MS, tap_timeout_handler, NULL);
   }
 }
 
