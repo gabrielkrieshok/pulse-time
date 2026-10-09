@@ -1,7 +1,7 @@
 {
   "name": "pulse-time",
   "author": "Gabriel Krieshok",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "pebble": {
     "displayName": "Pulse Time",
     "uuid": "2e8dbb19-0545-4357-99c5-0c0aa303ddd5",
