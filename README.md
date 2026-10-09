@@ -138,18 +138,36 @@ you use. **Double-tap your wrist** at any time to feel the time.
 
 ### Controls
 
-| Button              | Action                                         |
-|---------------------|-------------------------------------------------|
-| **SELECT** (press)  | Start or stop the background worker             |
-| **SELECT** (hold)   | Trigger a test vibe (useful while configuring)   |
-| **UP**              | Cycle mode: Terse &rarr; Digits &rarr; Morse    |
-| **UP** (hold)       | Toggle the hourly chime on/off                   |
-| **DOWN**            | Cycle preset: Standard &rarr; Gentle &rarr; Strong &rarr; Learn |
-| **BACK**            | Exit the app (worker keeps running)              |
+The app opens to a menu. **UP/DOWN** move the highlight; **SELECT** acts on
+the row.
+
+| Row                | SELECT does                                          |
+|--------------------|------------------------------------------------------|
+| **Worker**         | Start or stop the background worker                  |
+| **Mode**           | Cycle Terse &rarr; Digits &rarr; Morse               |
+| **Vibe**           | Cycle Standard &rarr; Gentle &rarr; Strong &rarr; Learn |
+| **Hourly chime**   | Toggle the on-the-hour buzz                          |
+| **Test buzz**      | Play the current time now (worker must be running)   |
+| **How to read it** | Points you to the guide in the phone settings        |
+
+**BACK** exits the app; the worker keeps running.
 
 When you change a setting, the watch gives a haptic confirmation so you
 can tell it took without looking: one short pulse for a mode change, two
 short pulses for a preset change, one long pulse for toggling the chime.
+
+### Phone settings & pattern guide
+
+In the Pebble phone app, open **Pulse Time** and tap the settings gear. The
+page there explains how to read each mode and has a **pattern player**: pick a
+time, see the long/short pulses drawn out, hear them with the real vibe
+timings, or choose **Buzz it on my watch** to feel exactly that time. It also
+sets mode, vibe and chime.
+
+Notes: the page is hosted on GitHub Pages (`docs/index.html`), so it needs a
+connection to load. "Buzz it on my watch" saves and closes the page, then
+plays the time; Pulse Time should be open or its worker running. Settings
+changed while the watch app is closed are delivered the next time it opens.
 
 ### Day-to-Day Use
 
@@ -197,10 +215,9 @@ you can read them without thinking.
 +------------------------------+
 |   Foreground App (src/c/)    |  <- Open from launcher to configure
 |                              |
-|  SELECT = start/stop worker  |
-|  UP     = cycle mode         |
-|  DOWN   = cycle preset       |
-|  HOLD SELECT = test vibe     |
+|  Menu: worker, mode, vibe,   |
+|  chime, test buzz, help      |
+|  AppMessage <- phone page    |
 |                              |
 |  Persists settings to        |
 |  Persistent Storage API      |
@@ -251,9 +268,11 @@ pulse-time/
 ├── package.json                    # Pebble project manifest
 ├── wscript                         # Build config (waf)
 ├── build.sh                        # Build helper (syncs headers, wraps pebble build)
+├── docs/index.html                 # Hosted settings page + pattern player (GitHub Pages)
+├── src/pkjs/index.js               # Phone-side glue: opens the page, relays settings
 ├── src/c/
 │   ├── pulse_time.h                # Shared definitions (storage keys, presets, modes)
-│   └── main.c                      # Foreground control-panel app
+│   └── main.c                      # Foreground menu app
 └── worker_src/c/
     ├── pulse_time.h                # Copy of shared header (see note below)
     └── pulse_time_worker.c         # Background worker (tap -> encode -> vibe)
@@ -300,7 +319,7 @@ pebble install --phone 192.168.1.42
   "it's 3:27."
 - **Count the longs first, then the shorts.** Longs are the "big" units
   (5 hours in Terse, 10s digit in Digits), shorts are the remainder.
-- **Use the test vibe** (long-press SELECT in the app) to practice at
+- **Use Test buzz** (in the app, or the pattern player on the phone settings page) to practice at
   known times until the patterns become second nature.
 - **Use the Learn preset first.** Everything is slower and the gaps are
   wider, so individual vibes and group boundaries are easy to pick out.

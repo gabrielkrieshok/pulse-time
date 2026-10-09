@@ -311,15 +311,28 @@ static void encode_time(int hour, int minute) {
   }
 }
 
-// Double-tap: vibrate the full current time
-static void vibe_current_time(void) {
+// Vibrate a given time (hour 0-23, minute 0-59) in the current mode and preset.
+// The hour is shown in the watch's clock style, same as the live time.
+static void vibe_time(int hour, int minute) {
   load_settings();   // user may have changed them
   stop_playback();
 
-  int hour, minute;
-  get_hour_minute(&hour, &minute);
+  if (!clock_is_24h_style()) {
+    hour %= 12;
+    if (hour == 0) hour = 12;
+  }
   encode_time(hour, minute);
   start_playback();
+}
+
+// Double-tap: vibrate the full current time
+static void vibe_current_time(void) {
+  int hour, minute;
+  time_t now = time(NULL);
+  struct tm *t = localtime(&now);
+  hour = t->tm_hour;
+  minute = t->tm_min;
+  vibe_time(hour, minute);
 }
 
 // Hourly chime: vibrate just the hour, in the current mode
@@ -374,6 +387,9 @@ static void worker_message_handler(uint16_t type, AppWorkerMessage *msg) {
     vibe_current_time();
   } else if (type == MSG_KEY_SETTINGS) {
     load_settings();
+  } else if (type == MSG_KEY_PLAY_TIME) {
+    int h = msg->data0, m = msg->data1;
+    if (h >= 0 && h < 24 && m >= 0 && m < 60) vibe_time(h, m);
   }
 }
 

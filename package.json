@@ -6,7 +6,7 @@
     "displayName": "Pulse Time",
     "uuid": "2e8dbb19-0545-4357-99c5-0c0aa303ddd5",
     "sdkVersion": "3",
-    "enableMultiJS": false,
+    "enableMultiJS": true,
     "targetPlatforms": [
       "aplite",
       "basalt",
@@ -20,6 +20,15 @@
     "resources": {
       "media": []
     },
-    "messageKeys": {}
+    "messageKeys": [
+      "MODE",
+      "PRESET",
+      "CHIME",
+      "PRACTICE_HOUR",
+      "PRACTICE_MINUTE"
+    ],
+    "capabilities": [
+      "configurable"
+    ]
   }
 }

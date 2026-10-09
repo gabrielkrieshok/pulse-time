@@ -22,6 +22,7 @@
 // --- AppWorkerMessage types ---
 #define MSG_KEY_TRIGGER   0   // play the current time now (test vibe)
 #define MSG_KEY_SETTINGS  1   // settings changed; reload from storage
+#define MSG_KEY_PLAY_TIME 2   // play an arbitrary time: data0 = hour, data1 = minute (24h)
 
 // --- Time-telling modes ---
 typedef enum {
