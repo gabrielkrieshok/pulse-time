@@ -164,10 +164,15 @@ time, see the long/short pulses drawn out, hear them with the real vibe
 timings, or choose **Buzz it on my watch** to feel exactly that time. It also
 sets mode, vibe and chime.
 
+The page also lets you set **quiet hours** for the hourly chime (default 22:00
+&ndash; 07:00 once switched on). The chime stays silent between those hours.
+
 Notes: the page is hosted on GitHub Pages (`docs/index.html`), so it needs a
 connection to load. "Buzz it on my watch" saves and closes the page, then
-plays the time; Pulse Time should be open or its worker running. Settings
-changed while the watch app is closed are delivered the next time it opens.
+plays the time, starting the worker if it isn't running. When the watch app opens
+it sends its current settings to the phone, so the page always opens on what the
+watch actually has. A change saved while the watch app is closed is delivered the
+next time it opens.
 
 ### Day-to-Day Use
 
@@ -254,7 +259,7 @@ immediately, then chains the remaining groups with an `AppTimer` set to the
 group's duration plus the preset's inter-group gap, so the pauses are the
 real millisecond values from the preset table.
 
-**Hourly chime:** When enabled, the worker subscribes to the tick timer at
+**Hourly chime:** When enabled (and outside quiet hours), the worker subscribes to the tick timer at
 `MINUTE_UNIT` and, whenever the `HOUR_UNIT` flag flips, plays only the hour
 group(s) of the current mode. Off by default.
 
@@ -344,8 +349,9 @@ pebble install --phone 192.168.1.42
 - **Hourly chime and battery:** The chime keeps a once-a-minute tick
   subscription alive in the worker. That's cheap, but it's still more than
   nothing — leave it off if you're squeezing every hour out of a charge.
-- **Midnight in 24-hour mode:** Hour 0 has no vibes in Terse and Digits
-  modes, so 00:05 plays only the minute group. Morse mode plays `-----`.
+- **Midnight in 24-hour mode:** Hour 0 is **short, long** in Terse and Digits
+  modes. Every real hour group puts its longs first, so that reversed pair can't
+  be mistaken for one. Morse mode plays `-----`.
 - **Clock format:** Pulse Time follows your Pebble's system clock setting.
   In 12-hour mode, midnight and noon are both represented as 12. In 24-hour
   mode, hours range from 0 to 23.

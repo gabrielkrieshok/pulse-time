@@ -18,6 +18,13 @@
 #define STORAGE_KEY_PRESET       0x14
 #define STORAGE_KEY_MODE         0x15
 #define STORAGE_KEY_CHIME        0x16   // hourly chime on/off (0/1)
+#define STORAGE_KEY_QUIET        0x17   // chime quiet hours on/off (0/1)
+#define STORAGE_KEY_QUIET_START  0x18   // first silent hour (0-23)
+#define STORAGE_KEY_QUIET_END    0x19   // first hour chiming again (0-23)
+
+// Defaults for quiet hours: silent from 22:00 until 07:00
+#define QUIET_START_DEFAULT 22
+#define QUIET_END_DEFAULT   7
 
 // --- AppWorkerMessage types ---
 #define MSG_KEY_TRIGGER   0   // play the current time now (test vibe)
