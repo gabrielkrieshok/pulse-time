@@ -127,7 +127,8 @@ the rhythm predictable.
 
 ### First-Time Setup
 
-1. Install the `.pbw` file on your Pebble
+1. Install Pulse Time from the [Rebble App Store](https://apps.rebble.io/en_US/application/6ac931717c7c2000098af597), or sideload the
+   `.pbw` from the [latest release](https://github.com/gabrielkrieshok/pulse-time/releases/latest)
 2. Open **Pulse Time** from the app launcher
 3. Press **SELECT** (middle button) to start the background worker
 4. The status indicator turns green and shows **RUNNING**
@@ -371,6 +372,7 @@ the Pebble 2 Duo / Pebble Time 2 from Core Devices.
 
 ## Project links
 
+- Rebble App Store: https://apps.rebble.io/en_US/application/6ac931717c7c2000098af597
 - Code and issues: https://github.com/gabrielkrieshok/pulse-time
 - Rebble developer docs: https://developer.rebble.io/
 
