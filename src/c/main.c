@@ -1,22 +1,36 @@
 /**
  * Pulse Time — Foreground App
  *
- * Control panel for the background worker.
- *   SELECT:       start / stop the background worker
- *   SELECT (hold): test vibe (plays the current time)
- *   UP:           cycle mode (Terse → Digits → Morse)
- *   UP (hold):    toggle hourly chime
- *   DOWN:         cycle vibe preset (Standard → Gentle → Strong → Learn)
+ * Menu-driven control panel for the background worker.
+ *   Worker       start / stop the background worker
+ *   Mode         cycle Terse -> Digits -> Morse
+ *   Vibe         cycle Standard -> Gentle -> Strong -> Learn
+ *   Hourly chime toggle the on-the-hour hour buzz
+ *   Test buzz    play the current time now
+ *   How to read  pointer to the phone-side guide
+ *
+ * The phone settings page (src/pkjs + docs/) sends the same settings over
+ * AppMessage, plus an optional "practice time" to buzz.
  *
  * Open this app once to configure, then close it.
  * The worker keeps running behind any watchface.
- * Double-tap your wrist to feel the time.
  */
 
 #include <pebble.h>
 #include "pulse_time.h"
 
 DEFINE_PRESETS  // expands the preset table
+
+// --- Menu rows ---
+enum {
+  ROW_WORKER = 0,
+  ROW_MODE,
+  ROW_PRESET,
+  ROW_CHIME,
+  ROW_TEST,
+  ROW_HELP,
+  ROW_COUNT,
+};
 
 // --- State ---
 static int s_current_preset;
@@ -25,18 +39,9 @@ static bool s_chime_enabled;
 
 // --- UI ---
 static Window    *s_main_window;
-static TextLayer *s_title_layer;
-static TextLayer *s_status_layer;
-static TextLayer *s_mode_layer;
-static TextLayer *s_desc_layer;
-static TextLayer *s_preset_layer;
-static TextLayer *s_chime_layer;
-static TextLayer *s_hint_layer;
-
-static char s_status_buf[32];
-static char s_mode_buf[32];
-static char s_preset_buf[32];
-static char s_chime_buf[32];
+static MenuLayer *s_menu_layer;
+static Window    *s_help_window;
+static TextLayer *s_help_text;
 
 // --- Helpers ---
 
@@ -51,164 +56,177 @@ static void save_settings(void) {
   persist_write_int(STORAGE_KEY_CHIME,      s_chime_enabled ? 1 : 0);
 }
 
-static void notify_worker(uint16_t type) {
+static void notify_worker(uint16_t type, uint16_t data0, uint16_t data1) {
   if (!app_worker_is_running()) return;
-  AppWorkerMessage msg = { .data0 = 0 };
+  AppWorkerMessage msg = { .data0 = data0, .data1 = data1, .data2 = 0 };
   app_worker_send_message(type, &msg);
 }
 
-static const char* mode_description(PulseTimeMode mode) {
-  switch (mode) {
-    case MODE_TERSE:  return "5h + 1h, then quarters";
-    case MODE_DIGITS: return "10s + 1s digits, to the minute";
-    case MODE_MORSE:  return "Each digit in Morse";
-    default:          return "";
+static void settings_changed(void) {
+  save_settings();
+  notify_worker(MSG_KEY_SETTINGS, 0, 0);
+  if (s_menu_layer) menu_layer_reload_data(s_menu_layer);
+}
+
+// --- Menu ---
+
+static uint16_t menu_get_num_rows(MenuLayer *layer, uint16_t section, void *ctx) {
+  return ROW_COUNT;
+}
+
+static void menu_draw_row(GContext *gctx, const Layer *cell_layer,
+                          MenuIndex *idx, void *ctx) {
+  const char *title = "";
+  const char *subtitle = "";
+
+  switch (idx->row) {
+    case ROW_WORKER:
+      title = "Worker";
+      subtitle = app_worker_is_running() ? "Running" : "Stopped";
+      break;
+    case ROW_MODE:
+      title = "Mode";
+      subtitle = mode_name(s_current_mode);
+      break;
+    case ROW_PRESET:
+      title = "Vibe";
+      subtitle = s_presets[s_current_preset].name;
+      break;
+    case ROW_CHIME:
+      title = "Hourly chime";
+      subtitle = s_chime_enabled ? "On" : "Off";
+      break;
+    case ROW_TEST:
+      title = "Test buzz";
+      subtitle = app_worker_is_running() ? "Play the time now"
+                                         : "Turn worker on first";
+      break;
+    case ROW_HELP:
+      title = "How to read it";
+      subtitle = "See phone settings";
+      break;
+  }
+  menu_cell_basic_draw(gctx, cell_layer, title, subtitle, NULL);
+}
+
+static void help_window_load(Window *window) {
+  Layer *root = window_get_root_layer(window);
+  GRect bounds = layer_get_bounds(root);
+  s_help_text = text_layer_create(
+      GRect(8, PBL_IF_ROUND_ELSE(24, 4), bounds.size.w - 16, bounds.size.h - 8));
+  text_layer_set_font(s_help_text, fonts_get_system_font(FONT_KEY_GOTHIC_18));
+  text_layer_set_text_alignment(s_help_text,
+                                PBL_IF_ROUND_ELSE(GTextAlignmentCenter,
+                                                  GTextAlignmentLeft));
+  text_layer_set_text(s_help_text,
+    "Double-tap your wrist to feel the time.\n\n"
+    "A step-by-step guide with a pattern player lives in the Pebble phone "
+    "app: open Pulse Time and tap the settings gear.");
+  layer_add_child(root, text_layer_get_layer(s_help_text));
+}
+
+static void help_window_unload(Window *window) {
+  text_layer_destroy(s_help_text);
+  s_help_text = NULL;
+}
+
+static void menu_select(MenuLayer *layer, MenuIndex *idx, void *ctx) {
+  switch (idx->row) {
+    case ROW_WORKER:
+      if (app_worker_is_running()) {
+        app_worker_kill();
+      } else {
+        AppWorkerResult result = app_worker_launch();
+        if (result != APP_WORKER_RESULT_SUCCESS &&
+            result != APP_WORKER_RESULT_ALREADY_RUNNING) {
+          vibes_double_pulse();   // could not start (e.g. another worker owns the slot)
+        }
+      }
+      menu_layer_reload_data(s_menu_layer);
+      break;
+    case ROW_MODE:
+      s_current_mode = (PulseTimeMode)((s_current_mode + 1) % MODE_COUNT);
+      settings_changed();
+      vibes_short_pulse();    // one pulse = mode changed
+      break;
+    case ROW_PRESET:
+      s_current_preset = (s_current_preset + 1) % NUM_PRESETS;
+      settings_changed();
+      vibes_double_pulse();   // two pulses = preset changed
+      break;
+    case ROW_CHIME:
+      s_chime_enabled = !s_chime_enabled;
+      settings_changed();
+      vibes_long_pulse();     // one long pulse = chime toggled
+      break;
+    case ROW_TEST:
+      if (app_worker_is_running()) {
+        notify_worker(MSG_KEY_TRIGGER, 0, 0);
+      } else {
+        vibes_double_pulse();
+      }
+      break;
+    case ROW_HELP:
+      window_stack_push(s_help_window, true);
+      break;
   }
 }
 
-static void update_ui(void) {
-  // Worker status
-  if (app_worker_is_running()) {
-    snprintf(s_status_buf, sizeof(s_status_buf), "RUNNING");
-    text_layer_set_text_color(s_status_layer, GColorGreen);
-  } else {
-    snprintf(s_status_buf, sizeof(s_status_buf), "STOPPED");
-    text_layer_set_text_color(s_status_layer, GColorRed);
+// --- AppMessage (from the phone settings page) ---
+
+static void inbox_received(DictionaryIterator *iter, void *context) {
+  bool changed = false;
+
+  Tuple *t = dict_find(iter, MESSAGE_KEY_MODE);
+  if (t && t->value->int32 >= 0 && t->value->int32 < MODE_COUNT) {
+    s_current_mode = (PulseTimeMode)t->value->int32;
+    changed = true;
   }
-  text_layer_set_text(s_status_layer, s_status_buf);
-
-  // Mode
-  snprintf(s_mode_buf, sizeof(s_mode_buf), "Mode: %s", mode_name(s_current_mode));
-  text_layer_set_text(s_mode_layer, s_mode_buf);
-  text_layer_set_text(s_desc_layer, mode_description(s_current_mode));
-
-  // Preset
-  snprintf(s_preset_buf, sizeof(s_preset_buf), "Vibe: %s",
-           s_presets[s_current_preset].name);
-  text_layer_set_text(s_preset_layer, s_preset_buf);
-
-  // Chime
-  snprintf(s_chime_buf, sizeof(s_chime_buf), "Hourly chime: %s",
-           s_chime_enabled ? "On" : "Off");
-  text_layer_set_text(s_chime_layer, s_chime_buf);
-}
-
-// --- Button handlers ---
-
-static void select_click_handler(ClickRecognizerRef recognizer, void *context) {
-  if (app_worker_is_running()) {
-    app_worker_kill();
-  } else {
-    AppWorkerResult result = app_worker_launch();
-    if (result != APP_WORKER_RESULT_SUCCESS &&
-        result != APP_WORKER_RESULT_ALREADY_RUNNING) {
-      snprintf(s_status_buf, sizeof(s_status_buf), "Error: %d", (int)result);
-      text_layer_set_text(s_status_layer, s_status_buf);
-      text_layer_set_text_color(s_status_layer, GColorYellow);
-      return;
-    }
+  t = dict_find(iter, MESSAGE_KEY_PRESET);
+  if (t && t->value->int32 >= 0 && t->value->int32 < NUM_PRESETS) {
+    s_current_preset = (int)t->value->int32;
+    changed = true;
   }
-  update_ui();
-}
+  t = dict_find(iter, MESSAGE_KEY_CHIME);
+  if (t) {
+    s_chime_enabled = t->value->int32 != 0;
+    changed = true;
+  }
+  if (changed) settings_changed();
 
-static void up_click_handler(ClickRecognizerRef recognizer, void *context) {
-  s_current_mode = (PulseTimeMode)((s_current_mode + 1) % MODE_COUNT);
-  save_settings();
-  notify_worker(MSG_KEY_SETTINGS);
-  update_ui();
-  vibes_short_pulse();  // feedback: one pulse = mode changed
-}
-
-static void down_click_handler(ClickRecognizerRef recognizer, void *context) {
-  s_current_preset = (s_current_preset + 1) % NUM_PRESETS;
-  save_settings();
-  notify_worker(MSG_KEY_SETTINGS);
-  update_ui();
-  vibes_double_pulse();  // feedback: two pulses = preset changed
-}
-
-// Long-press UP: toggle hourly chime
-static void up_long_handler(ClickRecognizerRef recognizer, void *context) {
-  s_chime_enabled = !s_chime_enabled;
-  save_settings();
-  notify_worker(MSG_KEY_SETTINGS);
-  update_ui();
-  vibes_long_pulse();  // feedback: one long pulse = chime toggled
-}
-
-// Long-press SELECT: trigger a test vibe via the worker
-static void select_long_handler(ClickRecognizerRef recognizer, void *context) {
-  notify_worker(MSG_KEY_TRIGGER);
-}
-
-static void click_config_provider(void *context) {
-  window_single_click_subscribe(BUTTON_ID_SELECT, select_click_handler);
-  window_single_click_subscribe(BUTTON_ID_UP, up_click_handler);
-  window_single_click_subscribe(BUTTON_ID_DOWN, down_click_handler);
-  window_long_click_subscribe(BUTTON_ID_SELECT, 700, select_long_handler, NULL);
-  window_long_click_subscribe(BUTTON_ID_UP, 700, up_long_handler, NULL);
+  // Optional "practice" request: buzz this time in the chosen mode/preset.
+  Tuple *ph = dict_find(iter, MESSAGE_KEY_PRACTICE_HOUR);
+  Tuple *pm = dict_find(iter, MESSAGE_KEY_PRACTICE_MINUTE);
+  if (ph && pm) {
+    if (!app_worker_is_running()) app_worker_launch();
+    // A just-launched worker may not be listening yet; the user can retry
+    // from the page. Normally the worker is already running.
+    notify_worker(MSG_KEY_PLAY_TIME,
+                  (uint16_t)ph->value->int32, (uint16_t)pm->value->int32);
+  }
 }
 
 // --- Window ---
 
-static TextLayer* add_text_layer(Layer *root, GRect frame, const char *font_key,
-                                 GColor color) {
-  TextLayer *tl = text_layer_create(frame);
-  text_layer_set_text_alignment(tl, GTextAlignmentCenter);
-  text_layer_set_font(tl, fonts_get_system_font(font_key));
-  text_layer_set_background_color(tl, GColorClear);
-  text_layer_set_text_color(tl, color);
-  layer_add_child(root, text_layer_get_layer(tl));
-  return tl;
-}
-
 static void main_window_load(Window *window) {
   Layer *root = window_get_root_layer(window);
   GRect bounds = layer_get_bounds(root);
-  int w = bounds.size.w;
-  int y = 4;
 
-  s_title_layer = add_text_layer(root, GRect(0, y, w, 26),
-                                 FONT_KEY_GOTHIC_24_BOLD, GColorWhite);
-  text_layer_set_text(s_title_layer, "Pulse Time");
-  y += 26;
-
-  s_status_layer = add_text_layer(root, GRect(0, y, w, 20),
-                                  FONT_KEY_GOTHIC_18_BOLD, GColorWhite);
-  y += 20;
-
-  s_mode_layer = add_text_layer(root, GRect(0, y, w, 20),
-                                FONT_KEY_GOTHIC_18, GColorWhite);
-  y += 20;
-
-  s_desc_layer = add_text_layer(root, GRect(8, y, w - 16, 16),
-                                FONT_KEY_GOTHIC_14, GColorLightGray);
-  y += 18;
-
-  s_preset_layer = add_text_layer(root, GRect(0, y, w, 20),
-                                  FONT_KEY_GOTHIC_18, GColorWhite);
-  y += 20;
-
-  s_chime_layer = add_text_layer(root, GRect(0, y, w, 20),
-                                 FONT_KEY_GOTHIC_18, GColorWhite);
-  y += 20;
-
-  s_hint_layer = add_text_layer(root, GRect(4, y, w - 8, 30),
-                                FONT_KEY_GOTHIC_14, GColorLightGray);
-  text_layer_set_text(s_hint_layer,
-    "UP mode  SEL on/off  DN vibe\nhold UP chime  hold SEL test");
-
-  update_ui();
+  s_menu_layer = menu_layer_create(bounds);
+  menu_layer_set_callbacks(s_menu_layer, NULL, (MenuLayerCallbacks) {
+    .get_num_rows = menu_get_num_rows,
+    .draw_row     = menu_draw_row,
+    .select_click = menu_select,
+  });
+  menu_layer_set_highlight_colors(s_menu_layer,
+      PBL_IF_COLOR_ELSE(GColorCobaltBlue, GColorBlack), GColorWhite);
+  menu_layer_set_click_config_onto_window(s_menu_layer, window);
+  layer_add_child(root, menu_layer_get_layer(s_menu_layer));
 }
 
 static void main_window_unload(Window *window) {
-  text_layer_destroy(s_title_layer);
-  text_layer_destroy(s_status_layer);
-  text_layer_destroy(s_mode_layer);
-  text_layer_destroy(s_desc_layer);
-  text_layer_destroy(s_preset_layer);
-  text_layer_destroy(s_chime_layer);
-  text_layer_destroy(s_hint_layer);
+  menu_layer_destroy(s_menu_layer);
+  s_menu_layer = NULL;
 }
 
 // --- Lifecycle ---
@@ -227,17 +245,26 @@ static void init(void) {
   // Ensure settings are persisted (first run)
   save_settings();
 
+  app_message_register_inbox_received(inbox_received);
+  app_message_open(128, 32);
+
   s_main_window = window_create();
-  window_set_background_color(s_main_window, GColorBlack);
-  window_set_click_config_provider(s_main_window, click_config_provider);
   window_set_window_handlers(s_main_window, (WindowHandlers) {
     .load   = main_window_load,
     .unload = main_window_unload,
   });
+
+  s_help_window = window_create();
+  window_set_window_handlers(s_help_window, (WindowHandlers) {
+    .load   = help_window_load,
+    .unload = help_window_unload,
+  });
+
   window_stack_push(s_main_window, true);
 }
 
 static void deinit(void) {
+  window_destroy(s_help_window);
   window_destroy(s_main_window);
 }
 

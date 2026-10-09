@@ -1,0 +1,320 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pulse Time</title>
+<style>
+  :root {
+    --bg: #ffffff; --fg: #1b1b1f; --muted: #6b6b76; --card: #f3f3f6;
+    --line: #d9d9e0; --accent: #2b5cff; --on-accent: #ffffff;
+    --long: #2b5cff; --short: #e8590c;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #121214; --fg: #f1f1f4; --muted: #9a9aa6; --card: #1d1d21;
+      --line: #34343b; --accent: #6f8fff; --on-accent: #0c0c0e;
+      --long: #6f8fff; --short: #ff8a4c;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 20px 16px 48px; background: var(--bg); color: var(--fg);
+    font: 16px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  }
+  main { max-width: 560px; margin: 0 auto; }
+  h1 { font-size: 24px; margin: 0 0 4px; }
+  h2 { font-size: 17px; margin: 28px 0 8px; }
+  p { margin: 0 0 10px; }
+  .sub { color: var(--muted); margin-bottom: 18px; }
+  .card { background: var(--card); border-radius: 12px; padding: 14px; margin-bottom: 12px; }
+  label.row { display: flex; justify-content: space-between; align-items: center;
+              gap: 12px; padding: 6px 0; }
+  select, input[type=number] {
+    font: inherit; color: var(--fg); background: var(--bg);
+    border: 1px solid var(--line); border-radius: 8px; padding: 6px 8px;
+  }
+  .seg { display: flex; gap: 6px; flex-wrap: wrap; }
+  .seg button {
+    flex: 1; min-width: 70px; font: inherit; color: var(--fg); background: var(--bg);
+    border: 1px solid var(--line); border-radius: 8px; padding: 8px 6px; cursor: pointer;
+  }
+  .seg button[aria-pressed=true] { background: var(--accent); color: var(--on-accent);
+                                   border-color: var(--accent); }
+  .time { display: flex; align-items: center; justify-content: center; gap: 8px;
+          font-size: 28px; margin: 6px 0 10px; }
+  .time input { width: 4.2ch; font-size: 28px; text-align: center; }
+  .lane { margin: 10px 0; }
+  .lane .name { font-size: 13px; color: var(--muted); margin-bottom: 4px; }
+  .pulses { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; min-height: 18px; }
+  .p { height: 14px; border-radius: 7px; transition: transform .1s, opacity .1s; }
+  .p.L { width: 40px; background: var(--long); }
+  .p.S { width: 14px; background: var(--short); }
+  .p.on { transform: scaleY(1.7); }
+  .none { color: var(--muted); font-size: 14px; }
+  .actions { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
+  button.btn {
+    flex: 1; min-width: 140px; font: inherit; font-weight: 600; cursor: pointer;
+    border-radius: 10px; padding: 11px 12px; border: 1px solid var(--line);
+    background: var(--bg); color: var(--fg);
+  }
+  button.primary { background: var(--accent); color: var(--on-accent); border-color: var(--accent); }
+  .legend { display: flex; gap: 16px; font-size: 14px; color: var(--muted); margin-top: 8px; }
+  .legend span::before { content: ""; display: inline-block; height: 10px; border-radius: 5px;
+                         margin-right: 6px; vertical-align: middle; }
+  .legend .l::before { width: 26px; background: var(--long); }
+  .legend .s::before { width: 10px; background: var(--short); }
+  details { margin-bottom: 8px; }
+  summary { cursor: pointer; font-weight: 600; padding: 6px 0; }
+  .note { font-size: 14px; color: var(--muted); }
+  code { background: var(--card); padding: 1px 5px; border-radius: 5px; }
+  .hide { display: none; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Pulse Time</h1>
+  <p class="sub">Feel the time through your watch. Double-tap your wrist to hear
+  nothing and feel everything. Use this page to learn the patterns and change settings.</p>
+
+  <h2>Settings</h2>
+  <div class="card">
+    <p class="note" style="margin-bottom:6px">Mode</p>
+    <div class="seg" id="mode"></div>
+    <p class="note" style="margin:12px 0 6px">Vibe timing</p>
+    <div class="seg" id="preset"></div>
+    <label class="row" style="margin-top:8px">
+      <span>Hourly chime <span class="note">(buzz the hour at the top of every hour)</span></span>
+      <input type="checkbox" id="chime">
+    </label>
+  </div>
+
+  <h2>Pattern player</h2>
+  <div class="card">
+    <div class="time">
+      <input type="number" id="hh" min="0" max="23" inputmode="numeric" aria-label="Hour">
+      <span>:</span>
+      <input type="number" id="mm" min="0" max="59" inputmode="numeric" aria-label="Minute">
+    </div>
+    <label class="row">
+      <span class="note">My watch shows 24-hour time</span>
+      <input type="checkbox" id="h24">
+    </label>
+    <div id="lanes"></div>
+    <div class="legend"><span class="l">long</span><span class="s">short</span></div>
+    <p class="note" id="explain" style="margin-top:10px"></p>
+    <div class="actions">
+      <button class="btn" id="playHere">&#9654; Play here (sound)</button>
+      <button class="btn primary" id="playWatch">Buzz it on my watch</button>
+    </div>
+    <p class="note" style="margin-top:8px">&ldquo;Buzz it on my watch&rdquo; saves your settings,
+    closes this page and plays the time you picked on the watch. Pulse Time needs to be running
+    (open it on the watch once).</p>
+  </div>
+
+  <h2>How to read it</h2>
+  <details open>
+    <summary>Terse &mdash; nearest 15 minutes</summary>
+    <p>Hours first: each <b>long</b> is 5 hours, each <b>short</b> is 1 hour. Pause. Then each
+    <b>long</b> is a quarter hour (none means it is before :15).</p>
+    <p class="note">7:20 &rarr; long, short, short &middot; pause &middot; long.</p>
+  </details>
+  <details>
+    <summary>Digits &mdash; exact minute</summary>
+    <p>Hours, then minutes. In each group, <b>longs</b> are the tens digit and <b>shorts</b> are
+    the ones digit. No minute group means it is exactly on the hour.</p>
+    <p class="note">12:47 &rarr; long, short, short &middot; pause &middot; long &times;4, short &times;7.</p>
+  </details>
+  <details>
+    <summary>Morse &mdash; each digit in Morse code</summary>
+    <p>Every digit is exactly five buzzes (long = dash, short = dot). Pauses separate digits. The
+    hour&rsquo;s leading zero is skipped.</p>
+    <p class="note">3:05 &rarr; <code>...--</code> &middot; <code>-----</code> &middot; <code>.....</code></p>
+  </details>
+  <details>
+    <summary>Tips for learning</summary>
+    <p>Start on <b>Terse</b> with the <b>Learn</b> vibe (slow, wide gaps). Turn on the hourly
+    chime so you get free practice at a moment you can check against a clock. Move to Standard
+    once you stop counting.</p>
+  </details>
+
+  <div class="actions" style="margin-top:20px">
+    <button class="btn primary" id="save">Save &amp; close</button>
+  </div>
+</main>
+
+<script>
+(function () {
+  var MODES = ['Terse', 'Digits', 'Morse'];
+  // Keep in sync with DEFINE_PRESETS in src/c/pulse_time.h
+  var PRESETS = [
+    { name: 'Standard', L: 400, S: 120, intra: 100, inter: 500 },
+    { name: 'Gentle',   L: 300, S: 80,  intra: 120, inter: 600 },
+    { name: 'Strong',   L: 500, S: 150, intra: 80,  inter: 450 },
+    { name: 'Learn',    L: 600, S: 200, intra: 250, inter: 1200 }
+  ];
+  var MORSE = ['-----', '.----', '..---', '...--', '....-', '.....', '-....', '--...', '---..', '----.'];
+
+  var q = new URLSearchParams(location.search);
+  var state = {
+    mode: clamp(+q.get('mode') || 0, 0, 2),
+    preset: clamp(+q.get('preset') || 0, 0, 3),
+    chime: q.get('chime') === '1'
+  };
+  var $ = function (id) { return document.getElementById(id); };
+
+  function clamp(n, lo, hi) { return Math.max(lo, Math.min(hi, n | 0)); }
+  function rep(c, n) { return new Array(Math.max(0, n) + 1).join(c); }
+
+  // ---- Encoders (mirror worker_src/c/pulse_time_worker.c) -------------
+  // Each group is a string of 'L' and 'S'. `hour` is as shown on the watch.
+  function encode(mode, hour, minute) {
+    var g = [];
+    if (mode === 0) {
+      var h = rep('L', Math.floor(hour / 5)) + rep('S', hour % 5);
+      if (h) g.push({ label: 'Hours', p: h });
+      var qn = Math.floor(minute / 15);
+      if (qn) g.push({ label: 'Quarter hours', p: rep('L', qn) });
+    } else if (mode === 1) {
+      var hh = rep('L', Math.floor(hour / 10)) + rep('S', hour % 10);
+      if (hh) g.push({ label: 'Hours', p: hh });
+      var tm = Math.floor(minute / 10), om = minute % 10;
+      if (tm || om) g.push({ label: 'Minutes', p: rep('L', tm) + rep('S', om) });
+    } else {
+      var digs = [];
+      if (hour >= 10) digs.push(Math.floor(hour / 10));
+      digs.push(hour % 10, Math.floor(minute / 10), minute % 10);
+      digs.forEach(function (d, i) {
+        g.push({ label: 'Digit ' + d, p: MORSE[d].replace(/-/g, 'L').replace(/\./g, 'S') });
+      });
+    }
+    return g;
+  }
+
+  function displayHour(h24, use24) {
+    if (use24) return h24;
+    var h = h24 % 12;
+    return h === 0 ? 12 : h;
+  }
+
+  // ---- UI -------------------------------------------------------------
+  function seg(id, labels, key) {
+    var el = $(id);
+    labels.forEach(function (name, i) {
+      var b = document.createElement('button');
+      b.type = 'button'; b.textContent = name;
+      b.addEventListener('click', function () { state[key] = i; refresh(); });
+      el.appendChild(b);
+    });
+  }
+  seg('mode', MODES, 'mode');
+  seg('preset', PRESETS.map(function (p) { return p.name; }), 'preset');
+
+  var now = new Date();
+  $('hh').value = now.getHours();
+  $('mm').value = now.getMinutes();
+  $('h24').checked = !/AM|PM/i.test(now.toLocaleTimeString());
+  $('chime').checked = state.chime;
+
+  function readTime() {
+    return { h: clamp(+$('hh').value, 0, 23), m: clamp(+$('mm').value, 0, 59) };
+  }
+
+  var lastGroups = [];
+  function refresh() {
+    Array.prototype.forEach.call($('mode').children, function (b, i) {
+      b.setAttribute('aria-pressed', String(i === state.mode));
+    });
+    Array.prototype.forEach.call($('preset').children, function (b, i) {
+      b.setAttribute('aria-pressed', String(i === state.preset));
+    });
+    state.chime = $('chime').checked;
+
+    var t = readTime();
+    var shown = displayHour(t.h, $('h24').checked);
+    lastGroups = encode(state.mode, shown, t.m);
+
+    var lanes = $('lanes');
+    lanes.innerHTML = '';
+    if (!lastGroups.length) {
+      lanes.innerHTML = '<p class="none">No buzzes at all &mdash; that is midnight in 24-hour Terse or Digits mode.</p>';
+    }
+    lastGroups.forEach(function (g, gi) {
+      var lane = document.createElement('div');
+      lane.className = 'lane';
+      lane.innerHTML = '<div class="name"></div><div class="pulses"></div>';
+      lane.firstChild.textContent = g.label;
+      var box = lane.lastChild;
+      g.p.split('').forEach(function (c, pi) {
+        var s = document.createElement('span');
+        s.className = 'p ' + c; s.id = 'p-' + gi + '-' + pi;
+        box.appendChild(s);
+      });
+      lanes.appendChild(lane);
+    });
+    var hr = shown;
+    $('explain').textContent = 'Watch time: ' + hr + ':' + (t.m < 10 ? '0' : '') + t.m +
+      ' · ' + MODES[state.mode] + ' · ' + PRESETS[state.preset].name + ' vibe';
+  }
+
+  ['hh', 'mm', 'h24', 'chime'].forEach(function (id) {
+    $(id).addEventListener('input', refresh);
+    $(id).addEventListener('change', refresh);
+  });
+
+  // ---- Sound preview (real preset timings) ----------------------------
+  var ctx = null, timers = [];
+  function stopPlayback() {
+    timers.forEach(clearTimeout); timers = [];
+    Array.prototype.forEach.call(document.querySelectorAll('.p.on'), function (e) {
+      e.classList.remove('on');
+    });
+  }
+  function beep(ms, freq) {
+    if (!ctx) ctx = new (window.AudioContext || window.webkitAudioContext)();
+    var o = ctx.createOscillator(), g = ctx.createGain();
+    o.frequency.value = freq; o.connect(g); g.connect(ctx.destination);
+    var t0 = ctx.currentTime;
+    g.gain.setValueAtTime(0.0001, t0);
+    g.gain.exponentialRampToValueAtTime(0.25, t0 + 0.01);
+    g.gain.setValueAtTime(0.25, t0 + ms / 1000 - 0.02);
+    g.gain.exponentialRampToValueAtTime(0.0001, t0 + ms / 1000);
+    o.start(t0); o.stop(t0 + ms / 1000 + 0.02);
+  }
+  $('playHere').addEventListener('click', function () {
+    stopPlayback();
+    var p = PRESETS[state.preset], at = 0;
+    lastGroups.forEach(function (g, gi) {
+      g.p.split('').forEach(function (c, pi) {
+        var dur = c === 'L' ? p.L : p.S, id = 'p-' + gi + '-' + pi;
+        timers.push(setTimeout(function () {
+          var e = $(id); if (e) e.classList.add('on');
+          beep(dur, c === 'L' ? 330 : 520);
+        }, at));
+        timers.push(setTimeout(function () {
+          var e = $(id); if (e) e.classList.remove('on');
+        }, at + dur));
+        at += dur + (pi < g.p.length - 1 ? p.intra : 0);
+      });
+      at += p.inter;
+    });
+  });
+
+  // ---- Return to the Pebble app ---------------------------------------
+  function close(extra) {
+    var result = { mode: state.mode, preset: state.preset, chime: state.chime ? 1 : 0 };
+    if (extra) result.practice = extra;
+    var ret = q.get('return_to') || 'pebblejs://close#';
+    location.href = ret + encodeURIComponent(JSON.stringify(result));
+  }
+  $('save').addEventListener('click', function () { close(null); });
+  $('playWatch').addEventListener('click', function () {
+    var t = readTime();
+    close({ hour: t.h, minute: t.m });
+  });
+
+  refresh();
+})();
+</script>
+</body>
+</html>
