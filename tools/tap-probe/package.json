@@ -1,0 +1,26 @@
+{
+  "name": "tap-probe",
+  "author": "Gabriel Krieshok",
+  "version": "0.1.0",
+  "pebble": {
+    "displayName": "Tap Probe",
+    "uuid": "b69ef1d2-c913-45ad-a818-372e5e67062e",
+    "sdkVersion": "3",
+    "enableMultiJS": true,
+    "targetPlatforms": [
+      "aplite",
+      "basalt",
+      "chalk",
+      "diorite",
+      "emery"
+    ],
+    "watchapp": {
+      "watchface": false
+    },
+    "resources": {
+      "media": []
+    },
+    "messageKeys": [],
+    "capabilities": []
+  }
+}
