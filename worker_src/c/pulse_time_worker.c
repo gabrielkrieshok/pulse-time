@@ -1,8 +1,10 @@
 /**
  * Pulse Time — Background Worker
  *
- * Runs behind any watchface. Listens for a double wrist-tap
- * and vibrates the current time in one of three modes:
+ * Runs behind any watchface. Listens for a wake gesture, either a
+ * triple wrist-tap (firmware tap service) or a triple shake (our own
+ * detector on raw accelerometer samples), and vibrates the current
+ * time in one of three modes:
  *
  *   TERSE:  5h groups + quarter-hours (Apple Watch-style)
  *   DIGITS: 10h/1h + 10m/1m (precise, every minute)
@@ -39,12 +41,38 @@ static bool s_chime_enabled;
 static bool s_quiet_enabled;
 static int  s_quiet_start;
 static int  s_quiet_end;
+static GestureType s_gesture;
+static int  s_gesture_subscribed = -1;   // GestureType currently subscribed, -1 = none
 
-// --- Triple-tap detection ---
+// --- Triple-tap detection (GESTURE_TAP) ---
 #define TAPS_REQUIRED       3     // taps needed to trigger
 #define TAP_WINDOW_MS       800   // each tap must follow the previous within this window
 static AppTimer *s_tap_timer;
 static int s_tap_count;
+
+// --- Triple-shake detection (GESTURE_SHAKE) ---
+// Raw accelerometer samples instead of the tap service. Gravity alone reads
+// about 1000 mG. A fingertip tap on the case peaks around 1200-1500 mG for a
+// sample or two; a deliberate wrist shake swings 2000-4000 mG for 100 ms or
+// more per stroke, so a magnitude threshold with a refractory period
+// separates them with plenty of margin. The expensive part is that the
+// accelerometer streams the whole time this gesture is selected.
+#define SHAKE_SAMPLE_RATE     ACCEL_SAMPLING_25HZ
+#define SHAKE_SAMPLE_MS       40     // 1000 ms / 25 Hz
+#define SHAKE_BATCH           5      // samples per callback: the handler runs every 200 ms
+#define SHAKE_THRESHOLD_MG    2500   // |accel| a sample must reach to count as a shake
+#define SHAKE_REFRACTORY_MS   200    // one shake's back-and-forth swing counts once
+#define SHAKE_WINDOW_MS       1500   // all SHAKES_REQUIRED must land inside this window
+#define SHAKE_COOLDOWN_MS     1000   // after a trigger, ignore the tail of the gesture
+#define SHAKES_REQUIRED       3
+#define SHAKE_DEBUG           0      // 1: log each batch's peak magnitude (./build.sh logs <IP>)
+
+static uint32_t s_shake_clock_ms;        // sample counter in ms; no wall clock needed
+static uint32_t s_shake_first_ms;        // first counted shake of the current run
+static uint32_t s_shake_last_ms;         // most recent counted shake
+static uint32_t s_shake_cooldown_until;  // shakes before this instant are ignored
+static int      s_shake_count;
+static bool     s_shake_armed = true;    // a sample dropped below the threshold since the last count
 
 // --- Vibe group playback ---
 #define MAX_GROUP_SEGMENTS 32
@@ -71,6 +99,36 @@ static uint32_t load_uint(uint32_t key, uint32_t fallback) {
 }
 
 static void chime_tick_handler(struct tm *tick_time, TimeUnits units_changed);
+static void accel_tap_handler(AccelAxisType axis, int32_t direction);
+static void accel_data_handler(AccelData *data, uint32_t num_samples);
+
+// Subscribe to whichever accelerometer service the chosen gesture needs.
+// Only one is live at a time; the raw data stream costs battery, so it runs
+// only while GESTURE_SHAKE is selected.
+static void apply_gesture_subscription(void) {
+  if (s_gesture_subscribed == (int)s_gesture) return;
+
+  if (s_gesture_subscribed == GESTURE_TAP) {
+    accel_tap_service_unsubscribe();
+    if (s_tap_timer) {
+      app_timer_cancel(s_tap_timer);
+      s_tap_timer = NULL;
+    }
+    s_tap_count = 0;
+  } else if (s_gesture_subscribed == GESTURE_SHAKE) {
+    accel_data_service_unsubscribe();
+    s_shake_count = 0;
+    s_shake_armed = true;
+  }
+
+  if (s_gesture == GESTURE_SHAKE) {
+    accel_data_service_subscribe(SHAKE_BATCH, accel_data_handler);
+    accel_service_set_sampling_rate(SHAKE_SAMPLE_RATE);
+  } else {
+    accel_tap_service_subscribe(accel_tap_handler);
+  }
+  s_gesture_subscribed = (int)s_gesture;
+}
 
 static void apply_chime_subscription(void) {
   // MINUTE_UNIT keeps the worker cheap; we act only when HOUR_UNIT flips.
@@ -97,6 +155,11 @@ static void load_settings(void) {
   s_quiet_enabled = load_uint(STORAGE_KEY_QUIET, 0) != 0;
   s_quiet_start   = (int)load_uint(STORAGE_KEY_QUIET_START, QUIET_START_DEFAULT) % 24;
   s_quiet_end     = (int)load_uint(STORAGE_KEY_QUIET_END,   QUIET_END_DEFAULT) % 24;
+
+  int gesture = (int)load_uint(STORAGE_KEY_GESTURE, 0);
+  s_gesture = (gesture >= 0 && gesture < GESTURE_COUNT) ? (GestureType)gesture : GESTURE_TAP;
+
+  apply_gesture_subscription();
   apply_chime_subscription();
 }
 
@@ -410,6 +473,69 @@ static void accel_tap_handler(AccelAxisType axis, int32_t direction) {
   }
 }
 
+#if SHAKE_DEBUG
+static uint32_t isqrt(uint32_t n) {
+  uint32_t r = 0, bit = 1u << 30;
+  while (bit > n) bit >>= 2;
+  while (bit) {
+    if (n >= r + bit) { n -= r + bit; r = (r >> 1) + bit; }
+    else r >>= 1;
+    bit >>= 2;
+  }
+  return r;
+}
+#endif
+
+// Triple-shake detector. Each sample is reduced to |accel|^2 (no sqrt needed;
+// the threshold is squared instead). A shake is counted on the rising edge
+// through the threshold, at most once per SHAKE_REFRACTORY_MS. Three counts
+// inside SHAKE_WINDOW_MS trigger the time; the run resets if it takes longer.
+static void accel_data_handler(AccelData *data, uint32_t num_samples) {
+  const int32_t thresh_sq = (int32_t)SHAKE_THRESHOLD_MG * SHAKE_THRESHOLD_MG;
+  int32_t peak_sq = 0;
+
+  for (uint32_t i = 0; i < num_samples; i++) {
+    s_shake_clock_ms += SHAKE_SAMPLE_MS;
+    const AccelData *d = &data[i];
+    if (d->did_vibrate) continue;   // the motor was on; the reading is noise
+
+    // Axis values are clamped to +/-4000 mG, so the sum fits in 32 bits.
+    int32_t mag_sq = (int32_t)d->x * d->x + (int32_t)d->y * d->y + (int32_t)d->z * d->z;
+    if (mag_sq > peak_sq) peak_sq = mag_sq;
+
+    if (mag_sq < thresh_sq) {
+      s_shake_armed = true;         // back below threshold: the next crossing is a new peak
+      continue;
+    }
+    if (!s_shake_armed) continue;   // still riding the same peak
+
+    uint32_t t = s_shake_clock_ms;
+    if (s_playing) continue;
+    if ((int32_t)(t - s_shake_cooldown_until) < 0) continue;
+    if (s_shake_count > 0) {
+      if (t - s_shake_last_ms < SHAKE_REFRACTORY_MS) continue;   // same shake, other direction
+      if (t - s_shake_first_ms > SHAKE_WINDOW_MS) s_shake_count = 0;   // too slow; start over
+    }
+    if (s_shake_count == 0) s_shake_first_ms = t;
+    s_shake_last_ms = t;
+    s_shake_armed = false;
+    s_shake_count++;
+
+    if (s_shake_count >= SHAKES_REQUIRED) {
+      s_shake_count = 0;
+      s_shake_cooldown_until = t + SHAKE_COOLDOWN_MS;
+      vibe_current_time();
+    }
+  }
+
+#if SHAKE_DEBUG
+  if (peak_sq > 0) {
+    APP_LOG(APP_LOG_LEVEL_DEBUG, "shake: peak %lu mG, count %d",
+            (unsigned long)isqrt((uint32_t)peak_sq), s_shake_count);
+  }
+#endif
+}
+
 static void worker_message_handler(uint16_t type, AppWorkerMessage *msg) {
   if (type == MSG_KEY_TRIGGER) {
     vibe_current_time();
@@ -426,8 +552,7 @@ static void worker_message_handler(uint16_t type, AppWorkerMessage *msg) {
 // ================================================================
 
 static void prv_init(void) {
-  load_settings();
-  accel_tap_service_subscribe(accel_tap_handler);
+  load_settings();   // also subscribes the gesture and chime services
   app_worker_message_subscribe(worker_message_handler);
 }
 
@@ -435,7 +560,11 @@ static void prv_deinit(void) {
   stop_playback();
   if (s_tap_timer) app_timer_cancel(s_tap_timer);
   tick_timer_service_unsubscribe();
-  accel_tap_service_unsubscribe();
+  if (s_gesture_subscribed == GESTURE_SHAKE) {
+    accel_data_service_unsubscribe();
+  } else if (s_gesture_subscribed == GESTURE_TAP) {
+    accel_tap_service_unsubscribe();
+  }
   app_worker_message_unsubscribe();
 }
 

@@ -11,7 +11,7 @@
 
 var CONFIG_URL = 'https://gabrielkrieshok.github.io/pulse-time/';
 
-var DEFAULTS = { mode: 0, preset: 0, chime: 0, quiet: 0, qstart: 22, qend: 7 };
+var DEFAULTS = { mode: 0, preset: 0, gesture: 0, chime: 0, quiet: 0, qstart: 22, qend: 7 };
 
 function load() {
   var s = {};
@@ -27,7 +27,7 @@ function save(s) {
 
 function toPayload(s) {
   return {
-    MODE: s.mode, PRESET: s.preset, CHIME: s.chime,
+    MODE: s.mode, PRESET: s.preset, GESTURE: s.gesture, CHIME: s.chime,
     QUIET: s.quiet, QUIET_START: s.qstart, QUIET_END: s.qend
   };
 }
@@ -57,6 +57,7 @@ Pebble.addEventListener('appmessage', function (e) {
   var s = load();
   s.mode = p.MODE | 0;
   s.preset = p.PRESET | 0;
+  if (typeof p.GESTURE === 'number') s.gesture = p.GESTURE | 0;
   s.chime = p.CHIME ? 1 : 0;
   s.quiet = p.QUIET ? 1 : 0;
   if (typeof p.QUIET_START === 'number') s.qstart = p.QUIET_START;
@@ -67,6 +68,7 @@ Pebble.addEventListener('appmessage', function (e) {
 Pebble.addEventListener('showConfiguration', function () {
   var s = load();
   var url = CONFIG_URL + '?mode=' + s.mode + '&preset=' + s.preset +
+            '&gesture=' + s.gesture +
             '&chime=' + s.chime + '&quiet=' + s.quiet +
             '&qs=' + s.qstart + '&qe=' + s.qend;
   Pebble.openURL(url);
@@ -80,6 +82,7 @@ Pebble.addEventListener('webviewclosed', function (e) {
   var s = {
     mode:   r.mode   | 0,
     preset: r.preset | 0,
+    gesture: r.gesture ? 1 : 0,
     chime:  r.chime ? 1 : 0,
     quiet:  r.quiet ? 1 : 0,
     qstart: ((r.qstart | 0) % 24 + 24) % 24,

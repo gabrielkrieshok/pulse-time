@@ -74,8 +74,8 @@
 <body>
 <main>
   <h1>Pulse Time</h1>
-  <p class="sub">Feel the time through your watch. Triple-tap your wrist and it buzzes the time
-  in long and short pulses. Use this page to learn the patterns and change settings.</p>
+  <p class="sub">Feel the time through your watch. Triple-tap (or triple-shake) your wrist and it
+  buzzes the time in long and short pulses. Use this page to learn the patterns and change settings.</p>
 
   <h2>Settings</h2>
   <div class="card">
@@ -83,6 +83,9 @@
     <div class="seg" id="mode"></div>
     <p class="note" style="margin:12px 0 6px">Vibe timing</p>
     <div class="seg" id="preset"></div>
+    <p class="note" style="margin:12px 0 6px">Gesture</p>
+    <div class="seg" id="gesture"></div>
+    <p class="note" id="gestureNote" style="margin:6px 0 0"></p>
     <label class="row" style="margin-top:8px">
       <span>Hourly chime <span class="note">(buzz the hour at the top of every hour)</span></span>
       <input type="checkbox" id="chime">
@@ -155,6 +158,13 @@
 <script>
 (function () {
   var MODES = ['Terse', 'Digits', 'Morse'];
+  var GESTURES = ['Triple-tap', 'Triple-shake'];
+  var GESTURE_NOTES = [
+    'Three firm knocks on your wrist, each within 0.8 s of the last. Uses the watch\u2019s ' +
+    'built-in tap detector, so it costs almost no battery.',
+    'Three deliberate shakes of your arm within 1.5 s. Reads the raw accelerometer, which ' +
+    'tells a real shake from a bump or a tap, but keeps the sensor streaming and uses more battery.'
+  ];
   // Keep in sync with DEFINE_PRESETS in src/c/pulse_time.h
   var PRESETS = [
     { name: 'Standard', L: 400, S: 120, intra: 100, inter: 500 },
@@ -168,6 +178,7 @@
   var state = {
     mode: clamp(+q.get('mode') || 0, 0, 2),
     preset: clamp(+q.get('preset') || 0, 0, 3),
+    gesture: clamp(+q.get('gesture') || 0, 0, 1),
     chime: q.get('chime') === '1',
     quiet: q.get('quiet') === '1',
     qs: q.has('qs') ? clamp(+q.get('qs'), 0, 23) : 22,
@@ -223,6 +234,7 @@
   }
   seg('mode', MODES, 'mode');
   seg('preset', PRESETS.map(function (p) { return p.name; }), 'preset');
+  seg('gesture', GESTURES, 'gesture');
 
   var now = new Date();
   $('hh').value = now.getHours();
@@ -251,6 +263,10 @@
     Array.prototype.forEach.call($('preset').children, function (b, i) {
       b.setAttribute('aria-pressed', String(i === state.preset));
     });
+    Array.prototype.forEach.call($('gesture').children, function (b, i) {
+      b.setAttribute('aria-pressed', String(i === state.gesture));
+    });
+    $('gestureNote').textContent = GESTURE_NOTES[state.gesture];
     state.chime = $('chime').checked;
     state.quiet = $('quiet').checked;
     state.qs = +$('qs').value;
@@ -330,7 +346,7 @@
   // ---- Return to the Pebble app ---------------------------------------
   function close(extra) {
     var result = {
-      mode: state.mode, preset: state.preset, chime: state.chime ? 1 : 0,
+      mode: state.mode, preset: state.preset, gesture: state.gesture, chime: state.chime ? 1 : 0,
       quiet: state.quiet ? 1 : 0, qstart: state.qs, qend: state.qe
     };
     if (extra) result.practice = extra;

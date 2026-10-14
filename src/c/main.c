@@ -5,6 +5,7 @@
  *   Worker       start / stop the background worker
  *   Mode         cycle Terse -> Digits -> Morse
  *   Vibe         cycle Standard -> Gentle -> Strong -> Learn
+ *   Gesture      toggle Triple-tap <-> Triple-shake
  *   Hourly chime toggle the on-the-hour hour buzz
  *   Test buzz    play the current time now
  *   How to read  pointer to the phone-side guide
@@ -26,6 +27,7 @@ enum {
   ROW_WORKER = 0,
   ROW_MODE,
   ROW_PRESET,
+  ROW_GESTURE,
   ROW_CHIME,
   ROW_TEST,
   ROW_HELP,
@@ -35,6 +37,7 @@ enum {
 // --- State ---
 static int s_current_preset;
 static PulseTimeMode s_current_mode;
+static GestureType s_gesture;
 static bool s_chime_enabled;
 static bool s_quiet_enabled;
 static int  s_quiet_start;
@@ -61,6 +64,7 @@ static void save_settings(void) {
   persist_write_int(STORAGE_KEY_GAP_INTER,  p->gap_inter);
   persist_write_int(STORAGE_KEY_PRESET,     s_current_preset);
   persist_write_int(STORAGE_KEY_MODE,       (int)s_current_mode);
+  persist_write_int(STORAGE_KEY_GESTURE,    (int)s_gesture);
   persist_write_int(STORAGE_KEY_CHIME,      s_chime_enabled ? 1 : 0);
   persist_write_int(STORAGE_KEY_QUIET,      s_quiet_enabled ? 1 : 0);
   persist_write_int(STORAGE_KEY_QUIET_START, s_quiet_start);
@@ -80,6 +84,7 @@ static void send_settings_to_phone(void) {
   if (app_message_outbox_begin(&out) != APP_MSG_OK) return;
   dict_write_int32(out, MESSAGE_KEY_MODE,   (int32_t)s_current_mode);
   dict_write_int32(out, MESSAGE_KEY_PRESET, s_current_preset);
+  dict_write_int32(out, MESSAGE_KEY_GESTURE, (int32_t)s_gesture);
   dict_write_int32(out, MESSAGE_KEY_CHIME,  s_chime_enabled ? 1 : 0);
   dict_write_int32(out, MESSAGE_KEY_QUIET,       s_quiet_enabled ? 1 : 0);
   dict_write_int32(out, MESSAGE_KEY_QUIET_START, s_quiet_start);
@@ -118,6 +123,10 @@ static void menu_draw_row(GContext *gctx, const Layer *cell_layer,
     case ROW_PRESET:
       title = "Vibe";
       subtitle = s_presets[s_current_preset].name;
+      break;
+    case ROW_GESTURE:
+      title = "Gesture";
+      subtitle = gesture_name(s_gesture);
       break;
     case ROW_CHIME:
       title = "Hourly chime";
@@ -161,7 +170,8 @@ static void help_window_load(Window *window) {
                                 PBL_IF_ROUND_ELSE(GTextAlignmentCenter,
                                                   GTextAlignmentLeft));
   text_layer_set_text(s_help_text,
-    "Triple-tap your wrist to feel the time.\n\n"
+    "Triple-tap your wrist to feel the time. Or pick the Triple-shake "
+    "gesture and shake your arm three times instead.\n\n"
     "Long buzz = big unit, short buzz = small unit.\n\n"
     "Terse: hours first (long = 5, short = 1), pause, then long = 15 min.\n\n"
     "Digits: hours, then minutes. Long = tens, short = ones.\n\n"
@@ -212,6 +222,11 @@ static void menu_select(MenuLayer *layer, MenuIndex *idx, void *ctx) {
       settings_changed();
       vibes_double_pulse();   // two pulses = preset changed
       break;
+    case ROW_GESTURE:
+      s_gesture = (GestureType)((s_gesture + 1) % GESTURE_COUNT);
+      settings_changed();
+      vibes_short_pulse();    // one pulse = gesture changed
+      break;
     case ROW_CHIME:
       s_chime_enabled = !s_chime_enabled;
       settings_changed();
@@ -258,6 +273,11 @@ static void inbox_received(DictionaryIterator *iter, void *context) {
   t = dict_find(iter, MESSAGE_KEY_PRESET);
   if (t && t->value->int32 >= 0 && t->value->int32 < NUM_PRESETS) {
     s_current_preset = (int)t->value->int32;
+    changed = true;
+  }
+  t = dict_find(iter, MESSAGE_KEY_GESTURE);
+  if (t && t->value->int32 >= 0 && t->value->int32 < GESTURE_COUNT) {
+    s_gesture = (GestureType)t->value->int32;
     changed = true;
   }
   t = dict_find(iter, MESSAGE_KEY_CHIME);
@@ -338,6 +358,9 @@ static void init(void) {
   int mode = (int)persist_read_int(STORAGE_KEY_MODE);
   s_current_mode = (mode >= 0 && mode < MODE_COUNT) ?
                    (PulseTimeMode)mode : MODE_TERSE;
+  int gesture = (int)persist_read_int(STORAGE_KEY_GESTURE);
+  s_gesture = (gesture >= 0 && gesture < GESTURE_COUNT) ?
+              (GestureType)gesture : GESTURE_TAP;
   s_chime_enabled = persist_read_int(STORAGE_KEY_CHIME) != 0;
   s_quiet_enabled = persist_read_int(STORAGE_KEY_QUIET) != 0;
   s_quiet_start = persist_exists(STORAGE_KEY_QUIET_START) ?

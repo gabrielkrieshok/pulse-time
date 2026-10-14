@@ -14,9 +14,16 @@ It runs as a background worker behind any watchface, so it's always ready. Choos
 - Digits: the exact minute. Long pulses are tens, short pulses are ones.
 - Morse: every digit as five dots and dashes.
 
+Prefer shaking to tapping? Switch the gesture to Triple-shake and shake your arm three times instead.
+
 Four vibe presets (Standard, Gentle, Strong, and a slow Learn preset) change the timing. An optional hourly chime buzzes the hour, with quiet hours so it stays silent overnight. The settings page in the Pebble phone app explains each mode and has a pattern player: pick a time, see the pulses drawn out, and buzz them on your watch to practise.
 
 Follows your watch's 12/24-hour setting. Open the app once and press SELECT on "Worker" to start it.
+
+## Release notes (v1.3.0)
+
+- New Gesture setting: Triple-tap (default) or Triple-shake. Triple-shake reads the raw accelerometer and triggers on three deliberate shakes of the arm within 1.5 seconds.
+- Gesture is settable from the watch menu and the phone settings page.
 
 ## Release notes (first store release, v1.2.2)
 

@@ -21,6 +21,7 @@
 #define STORAGE_KEY_QUIET        0x17   // chime quiet hours on/off (0/1)
 #define STORAGE_KEY_QUIET_START  0x18   // first silent hour (0-23)
 #define STORAGE_KEY_QUIET_END    0x19   // first hour chiming again (0-23)
+#define STORAGE_KEY_GESTURE      0x1A   // wake gesture: GestureType
 
 // Defaults for quiet hours: silent from 22:00 until 07:00
 #define QUIET_START_DEFAULT 22
@@ -38,6 +39,13 @@ typedef enum {
   MODE_MORSE  = 2,   // Each digit in Morse code
   MODE_COUNT  = 3,
 } PulseTimeMode;
+
+// --- Wake gesture: what the worker listens for ---
+typedef enum {
+  GESTURE_TAP   = 0,   // three wrist taps, via the firmware tap service
+  GESTURE_SHAKE = 1,   // three deliberate shakes, detected from raw accel samples
+  GESTURE_COUNT = 2,
+} GestureType;
 
 // --- Vibe presets ---
 typedef struct {
@@ -83,6 +91,15 @@ typedef struct {
       .gap_inter  = 1200, \
     }, \
   };
+
+// Gesture names for UI
+static inline const char* gesture_name(GestureType g) {
+  switch (g) {
+    case GESTURE_TAP:   return "Triple-tap";
+    case GESTURE_SHAKE: return "Triple-shake";
+    default:            return "?";
+  }
+}
 
 // Mode names for UI
 static inline const char* mode_name(PulseTimeMode mode) {
